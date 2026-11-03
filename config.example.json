@@ -1,0 +1,44 @@
+{
+  "asset": "btc",
+  "intervals": ["15m", "5m"],
+  "bankrollUsd": 1000,
+  "pollIntervalMs": 2000,
+  "intervalParams": {
+    "15m": {
+      "observationSeconds": 300,
+      "minDirectionHoldSeconds": 60,
+      "minRemainingSeconds": 240,
+      "stallSeconds": 180
+    },
+    "5m": {
+      "observationSeconds": 100,
+      "minDirectionHoldSeconds": 20,
+      "minRemainingSeconds": 90,
+      "stallSeconds": 60
+    }
+  },
+  "entry": {
+    "minEdge": 0.06,
+    "minModelProb": 0.52,
+    "maxModelProb": 0.72,
+    "maxEntryPriceCents": 0.65,
+    "minMovePct": 0.05,
+    "maxMovePct": 0.5,
+    "minHourlyRangePct": 0.3,
+    "maxSpreadCents": 2,
+    "kellyCut": 0.25,
+    "maxPositionPct": 0.08
+  },
+  "risk": {
+    "maxConcurrentPositions": 1,
+    "maxTradesPerDay": 6,
+    "maxConsecutiveLosses": 2,
+    "dailyLossLimitPct": 3,
+    "maxDrawdownPct": 15,
+    "cooldownAfterLossSec": 300
+  },
+  "news": {
+    "blackoutMinutes": 15,
+    "events": []
+  }
+}

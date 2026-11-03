@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit live keys
+.env
+.env.*
+!.env.example
+
+# Runtime state (positions, trades, logs, kill switch)
+.state/
+*.log
+
+# Freebuff local project markers
+.freebuff/
+
+# OS / editor
+.DS_Store
+Thumbs.db
