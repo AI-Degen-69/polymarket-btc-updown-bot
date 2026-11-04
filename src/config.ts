@@ -28,6 +28,8 @@ export interface EntryConfig {
   maxMovePct: number;
   /** Low-volatility grind filter: skip when BTC moved less than this in the hour. */
   minHourlyRangePct: number;
+  /** Minimum range in USD during the observation period to rule out tight chop (guide: $50 corridor). */
+  tightChopRangeUsd: number;
   /** Only trade when the bid/ask is at most this wide. */
   maxSpreadCents: number;
   /** Dead-band around the anchor so flapping inside noise is not "held direction". */
@@ -51,6 +53,8 @@ export interface ExitConfig {
   stallBandHigh: number;
   /** Below this the guide holds to resolution rather than locking the loss. */
   acceptLossBelowCents: number;
+  /** Hysteresis/grace window in seconds tolerated when bid briefly flickers outside stall band. */
+  stallGraceSeconds: number;
 }
 
 export interface RiskConfig {
@@ -130,6 +134,7 @@ export const DEFAULT_CONFIG: BotConfig = {
     minMovePct: 0.05,
     maxMovePct: 0.5,
     minHourlyRangePct: 0.3,
+    tightChopRangeUsd: 50,
     maxSpreadCents: 2,
     noisePct: 0.01,
     nonLiveAnchorExtraMovePct: 0.05,
@@ -143,6 +148,7 @@ export const DEFAULT_CONFIG: BotConfig = {
     stallBandLow: 0.6,
     stallBandHigh: 0.7,
     acceptLossBelowCents: 0.2,
+    stallGraceSeconds: 15,
   },
   risk: {
     maxConcurrentPositions: 1,
@@ -244,6 +250,7 @@ const EDITABLE: Record<string, [number, number]> = {
   "entry.minMovePct": [0, 5],
   "entry.maxMovePct": [0.01, 20],
   "entry.minHourlyRangePct": [0, 20],
+  "entry.tightChopRangeUsd": [0, 10_000],
   "entry.maxSpreadCents": [0.1, 20],
   "entry.kellyCut": [0, 1],
   "entry.maxPositionPct": [0.001, 0.5],
@@ -254,6 +261,7 @@ const EDITABLE: Record<string, [number, number]> = {
   "exit.stallBandLow": [0.05, 0.95],
   "exit.stallBandHigh": [0.05, 0.99],
   "exit.acceptLossBelowCents": [0.01, 0.5],
+  "exit.stallGraceSeconds": [0, 300],
   "risk.maxTradesPerDay": [1, 100],
   "risk.maxConsecutiveLosses": [1, 20],
   "risk.dailyLossLimitPct": [0.1, 100],

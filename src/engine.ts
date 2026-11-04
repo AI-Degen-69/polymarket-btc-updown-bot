@@ -120,11 +120,32 @@ export class Engine {
     }
     this.config = loadConfig({ live: this.config.live });
     this.risk = new RiskManager(this.state.risk, this.config.risk);
+    if (this.risk.recheckHalt(this.equityUsd())) {
+      log("risk", "halt cleared: allowed under new risk limits", {
+        equity: money(this.equityUsd()),
+        dailyLossLimitPct: this.config.risk.dailyLossLimitPct,
+      });
+    }
     this.lastSignature.clear();
     log("info", "configuration reloaded", {
       minEdge: this.config.entry.minEdge,
       maxTradesPerDay: this.config.risk.maxTradesPerDay,
+      dailyLossLimitPct: this.config.risk.dailyLossLimitPct,
       intervals: this.config.intervals.join(","),
+    });
+  }
+
+  /** A dashboard resume clears halts and unpauses entries. */
+  private reloadIfResume(): void {
+    if (!this.store || !existsSync(this.store.resumeMarkerPath)) return;
+    try {
+      rmSync(this.store.resumeMarkerPath, { force: true });
+    } catch {
+      // best effort
+    }
+    this.risk.resume();
+    log("risk", "halt cleared via manual resume", {
+      equity: money(this.equityUsd()),
     });
   }
 
@@ -148,10 +169,15 @@ export class Engine {
 
   async tick(nowMs: number = Date.now()): Promise<void> {
     this.reloadIfConfigChanged();
+    this.reloadIfResume();
     this.reloadIfReset();
     const equity = this.equityUsd();
     if (this.risk.rollDay(nowMs, equity)) {
       log("info", "new UTC day: daily counters reset", { equity: money(equity) });
+    }
+    this.risk.updateHighWater(equity);
+    if (equity > this.state.highWaterBankrollUsd) {
+      this.state.highWaterBankrollUsd = equity;
     }
 
     await this.syncMarkets(nowMs);
@@ -299,6 +325,7 @@ export class Engine {
         config: this.config,
       });
       position.stallSinceMs = decision.stallSinceMs;
+      position.stallLeftBandSinceMs = decision.stallLeftBandSinceMs;
 
       if (decision.action !== "sell") {
         this.throttledLog(
@@ -336,7 +363,7 @@ export class Engine {
       const proceeds = fill.shares * fill.price - fill.feeUsd;
       const pnl = proceeds - position.costUsd;
       this.closePosition(position);
-      this.risk.recordClose(pnl, nowMs, this.equityUsd());
+      this.risk.recordClose(pnl, nowMs, this.equityUsd() + pnl);
       log("exit", "closed position", {
         slug: position.slug,
         side: position.side,
@@ -388,7 +415,7 @@ export class Engine {
       const proceeds = position.shares * bid;
       const pnl = proceeds - position.costUsd;
       this.closePosition(position);
-      this.risk.recordClose(pnl, nowMs, this.equityUsd());
+      this.risk.recordClose(pnl, nowMs, this.equityUsd() + pnl);
       log("risk", "settled without official resolution (marked at last bid)", {
         slug: position.slug,
         bid,
@@ -426,7 +453,7 @@ export class Engine {
     const payout = won ? position.shares : 0;
     const pnl = payout - position.costUsd;
     this.closePosition(position);
-    this.risk.recordClose(pnl, nowMs, this.equityUsd());
+    this.risk.recordClose(pnl, nowMs, this.equityUsd() + pnl);
     log(won ? "settle" : "risk", "position resolved", {
       slug: position.slug,
       side: position.side,

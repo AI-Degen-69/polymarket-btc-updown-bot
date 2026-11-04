@@ -219,6 +219,76 @@ describe("entry rules", () => {
     const decision = evaluateEntry(entryContext({ newsBlocked: true }));
     expect(decision).toEqual(expect.objectContaining({ action: "skip", reason: "news-blackout" }));
   });
+
+  test("enters on post-shakeout recovery reversal (guide's real winning trade)", () => {
+    // Replicates Johannes's real trade example:
+    // Window open at 14:00 with anchor at 67,400.
+    // Early shakeout dumps to 67,150 (-0.37%).
+    // Minute 5-7: stabilizes and rallies to 67,250 with direction held for 60s.
+    // UP odds are mispriced at 28c.
+    const startMs = NOW - 420_000;
+    const m = market({
+      startMs,
+      endMs: startMs + 900_000,
+      quotes: {
+        Up: { bid: 0.27, ask: 0.28, bidSize: 500, askSize: 500 },
+        Down: { bid: 0.71, ask: 0.72, bidSize: 500, askSize: 500 },
+      },
+    });
+
+    const samplesList: PriceSample[] = [];
+    for (let t = NOW - 1200_000; t < startMs; t += 2_000) {
+      samplesList.push({ ts: t, value: 67_400 });
+    }
+    for (let t = startMs; t < startMs + 120_000; t += 2_000) {
+      const progress = (t - startMs) / 120_000;
+      samplesList.push({ ts: t, value: 67_400 - progress * 250 });
+    }
+    for (let t = startMs + 120_000; t < startMs + 300_000; t += 2_000) {
+      samplesList.push({ ts: t, value: 67_150 });
+    }
+    for (let t = startMs + 300_000; t <= NOW; t += 2_000) {
+      const progress = (t - (startMs + 300_000)) / 120_000;
+      samplesList.push({ ts: t, value: 67_150 + progress * 100 });
+    }
+
+    const decision = evaluateEntry(
+      entryContext({
+        market: m,
+        anchor: { value: 67_400, source: "live", capturedAtMs: startMs },
+        price: 67_250,
+        samples: samplesList,
+      }),
+    );
+
+    expect(decision.action).toBe("enter");
+    if (decision.action !== "enter") throw new Error("expected entry");
+    expect(decision.side).toBe("Up");
+    expect(decision.price).toBe(0.28);
+    expect(decision.edge).toBeGreaterThan(0.06);
+    expect(decision.modelProb).toBeGreaterThan(0.5);
+  });
+
+  test("sits out tight chop in observation window (< $50 range)", () => {
+    const startMs = NOW - 360_000;
+    const m = market({ startMs, endMs: startMs + 900_000 });
+    const samplesList: PriceSample[] = [];
+    for (let t = NOW - 1200_000; t < startMs; t += 2_000) {
+      samplesList.push({ ts: t, value: 100_000 + (t % 4_000 === 0 ? 400 : 0) });
+    }
+    for (let t = startMs; t <= NOW; t += 2_000) {
+      samplesList.push({ ts: t, value: 100_000 + (t % 4_000 === 0 ? 25 : 0) });
+    }
+    const decision = evaluateEntry(
+      entryContext({
+        market: m,
+        anchor: { value: 100_000, source: "live", capturedAtMs: startMs },
+        price: 100_025,
+        samples: samplesList,
+      }),
+    );
+    expect(decision).toEqual(expect.objectContaining({ action: "skip", reason: "tight-chop-no-trend" }));
+  });
 });
 
 describe("exit rules", () => {
@@ -257,6 +327,31 @@ describe("exit rules", () => {
     expect(evaluateExit(ctx(0.5, {}, true))).toEqual(
       expect.objectContaining({ action: "sell", reason: "news-invalidated-thesis" }),
     );
+  });
+
+  test("stall timer survives brief price flickers outside stall band (grace window)", () => {
+    const stallStart = NOW - 100_000;
+    // Bid drops to 0.59 (outside 0.60-0.70 band) for a brief tick
+    const flickering = evaluateExit({
+      nowMs: NOW,
+      position: position({ stallSinceMs: stallStart, stallLeftBandSinceMs: null }),
+      bid: 0.59,
+      newsBlocked: false,
+      config: config(),
+    });
+    // In grace window: holds without wiping stallSinceMs
+    expect(flickering.action).toBe("hold");
+    expect(flickering.stallSinceMs).toBe(stallStart);
+
+    // After remaining outside for 20 seconds (> 15s grace), stall counter resets
+    const expiredGrace = evaluateExit({
+      nowMs: NOW + 20_000,
+      position: position({ stallSinceMs: stallStart, stallLeftBandSinceMs: NOW }),
+      bid: 0.59,
+      newsBlocked: false,
+      config: config(),
+    });
+    expect(expiredGrace.stallSinceMs).toBeNull();
   });
 });
 
@@ -297,6 +392,48 @@ describe("risk manager", () => {
     expect(rolled).toBe(true);
     expect(risk.state.tradesToday).toBe(0);
     expect(risk.state.halted).toBe(false);
+    // Cumulative realized PnL is preserved, while dayRealizedPnlUsd is reset
+    expect(risk.state.realizedPnlUsd).toBe(-10);
+    expect(risk.state.dayRealizedPnlUsd).toBe(0);
+    expect(risk.state.dayStartEquityUsd).toBe(990);
+  });
+
+  test("does not falsely halt on daily loss limit after day rollover with prior profits", () => {
+    const risk = manager();
+    // Yesterday: two winning trades +24 and +65
+    risk.recordClose(24, NOW, 1024);
+    risk.recordClose(65, NOW + 1_000, 1089);
+    expect(risk.state.realizedPnlUsd).toBe(89);
+    expect(risk.state.highWaterEquityUsd).toBe(1089);
+
+    // Roll to next day at starting equity of 1089
+    const rolled = risk.rollDay(NOW + 86_400_000, 1089);
+    expect(rolled).toBe(true);
+    expect(risk.state.dayStartEquityUsd).toBe(1089);
+    expect(risk.state.realizedPnlUsd).toBe(89);
+
+    // Can open today with current equity 1089: day loss is 0, so no halt!
+    const check = risk.canOpen({ nowMs: NOW + 86_400_000 + 1_000, equityUsd: 1089, openPositions: 0, interval: "15m" });
+    expect(check.ok).toBe(true);
+    expect(risk.state.halted).toBe(false);
+  });
+
+  test("recheckHalt un-halts when daily loss limit is expanded", () => {
+    const risk = manager();
+    // Default limit is 3% ($30). Lose $50, advance past cooldown -> halts on daily loss limit
+    risk.recordClose(-50, NOW, 950);
+    const check = risk.canOpen({ nowMs: NOW + 400_000, equityUsd: 950, openPositions: 0, interval: "15m" });
+    expect(check.ok).toBe(false);
+    expect(risk.state.halted).toBe(true);
+    expect(risk.state.haltReason).toContain("daily-loss-limit");
+
+    // Operator expands daily loss limit to 10% ($100).
+    const looserConfig = { ...config().risk, dailyLossLimitPct: 10 };
+    const updatedRisk = new RiskManager(risk.state, looserConfig);
+    const resumed = updatedRisk.recheckHalt(950);
+    expect(resumed).toBe(true);
+    expect(updatedRisk.state.halted).toBe(false);
+    expect(updatedRisk.state.haltReason).toBeNull();
   });
 });
 
@@ -320,6 +457,28 @@ describe("reset", () => {
     expect(existsSync(store.tradesPath)).toBe(false);
     // The marker tells a running engine to reload its in-memory state.
     expect(existsSync(store.resetMarkerPath)).toBe(true);
+  });
+
+  test("reconciles realized PnL and heals false daily-loss-limit halts from trades log", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bot-reconcile-"));
+    const store = new Store(dir);
+    const initial = store.load(1_000);
+    initial.risk.realizedPnlUsd = 0; // simulated wipe from old bug
+    initial.risk.dayStartEquityUsd = 1088.47;
+    initial.risk.halted = true;
+    initial.risk.haltReason = "daily-loss-limit:32.65";
+    store.save(initial);
+
+    // Write historical closed trades
+    store.appendTrade({ ts: "2026-11-03T16:09:12Z", kind: "exit", slug: "btc-1", shares: 98, price: 0.85, usd: 82.4, pnlUsd: 23.91 });
+    store.appendTrade({ ts: "2026-11-03T16:43:28Z", kind: "exit", slug: "btc-2", shares: 167, price: 0.9, usd: 149.3, pnlUsd: 64.56 });
+
+    // Loading should restore cumulative PnL to 88.47 and clear the false halt
+    const loaded = store.load(1_000);
+    expect(loaded.risk.realizedPnlUsd).toBe(88.47);
+    expect(loaded.risk.highWaterEquityUsd).toBe(1088.47);
+    expect(loaded.risk.halted).toBe(false);
+    expect(loaded.risk.haltReason).toBeNull();
   });
 });
 

@@ -5,10 +5,13 @@
   "type": "module",
   "description": "5-minute strategy bot for Polymarket BTC 5m/15m Up-or-Down markets",
   "scripts": {
+    "dev": "bun --cwd web dev",
+    "build:web": "bun --cwd web build",
     "scan": "bun run src/index.ts scan",
     "run": "bun run src/index.ts run",
     "status": "bun run src/index.ts status",
     "dashboard": "bun run src/dashboard.ts",
+    "api": "bun run src/dashboard.ts",
     "reset": "bun run src/index.ts reset",
     "test": "bun test",
     "typecheck": "tsc --noEmit"

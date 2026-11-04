@@ -70,6 +70,8 @@ export interface Position {
   endMs: number;
   /** First time the odds sat inside the stall band, used for the 3-minute stall rule. */
   stallSinceMs: number | null;
+  /** When odds temporarily drifted outside stall band, used for the grace window before resetting stall timer. */
+  stallLeftBandSinceMs?: number | null;
   orderId?: string;
 }
 

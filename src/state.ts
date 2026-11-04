@@ -22,6 +22,8 @@ export class Store {
   readonly resetMarkerPath: string;
   /** Left behind by a config save so a running engine reloads its thresholds. */
   readonly configMarkerPath: string;
+  /** Left behind by a manual resume/unhalt so a running engine clears halts. */
+  readonly resumeMarkerPath: string;
   /** PID of a bot loop started from the dashboard. */
   readonly pidPath: string;
   readonly botLogPath: string;
@@ -33,12 +35,30 @@ export class Store {
     this.killSwitchPath = join(dir, "STOP");
     this.resetMarkerPath = join(dir, "RESET");
     this.configMarkerPath = join(dir, "RELOAD");
+    this.resumeMarkerPath = join(dir, "RESUME");
     this.pidPath = join(dir, "bot.pid");
     this.botLogPath = join(dir, "bot.log");
   }
 
   ensure(): void {
     mkdirSync(this.dir, { recursive: true });
+  }
+
+  totalRealizedPnlFromTrades(): number {
+    if (!existsSync(this.tradesPath)) return 0;
+    try {
+      const lines = readFileSync(this.tradesPath, "utf8").trim().split("\n").filter(Boolean);
+      let sum = 0;
+      for (const line of lines) {
+        const trade = JSON.parse(line) as TradeRecord;
+        if (typeof trade.pnlUsd === "number") {
+          sum += trade.pnlUsd;
+        }
+      }
+      return Math.round(sum * 100000) / 100000;
+    } catch {
+      return 0;
+    }
   }
 
   load(bankrollUsd: number): PersistedState {
@@ -63,6 +83,29 @@ export class Store {
       parsed.risk ??= freshRiskState(new Date().toISOString().slice(0, 10), bankrollUsd);
       parsed.bankrollUsd ??= bankrollUsd;
       parsed.highWaterBankrollUsd ??= bankrollUsd;
+
+      // Reconcile cumulative realized PnL if trades exist but state was wiped by day rollover
+      const tradePnlSum = this.totalRealizedPnlFromTrades();
+      if (tradePnlSum !== 0 && parsed.risk.realizedPnlUsd === 0) {
+        parsed.risk.realizedPnlUsd = tradePnlSum;
+      }
+      const currentEquity = parsed.bankrollUsd + parsed.risk.realizedPnlUsd;
+      if (parsed.risk.highWaterEquityUsd < currentEquity) {
+        parsed.risk.highWaterEquityUsd = currentEquity;
+      }
+      if (parsed.highWaterBankrollUsd < currentEquity) {
+        parsed.highWaterBankrollUsd = currentEquity;
+      }
+      // If halted due to daily-loss-limit but actual day loss does not breach the limit, heal halt status
+      if (parsed.risk.halted && parsed.risk.haltReason?.startsWith("daily-loss-limit")) {
+        const dayLoss = parsed.risk.dayStartEquityUsd - currentEquity;
+        const dayLimit = (parsed.risk.dayStartEquityUsd * 3) / 100;
+        if (dayLoss < dayLimit) {
+          parsed.risk.halted = false;
+          parsed.risk.haltReason = null;
+        }
+      }
+
       return parsed;
     } catch {
       const state: PersistedState = {

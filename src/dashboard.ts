@@ -14,7 +14,7 @@ import type { Interval, TradeRecord } from "./types.ts";
  * the bot already uses, and never holds a trading key. It can start the paper
  * loop, but live trading stays a deliberate `--live` CLI decision.
  */
-const config = loadConfig();
+let config = loadConfig();
 const store = new Store(config.dataDir);
 const journal = new Journal(config.dataDir);
 const port = Number(process.env.DASHBOARD_PORT ?? 8788);
@@ -94,15 +94,31 @@ function summarizeState() {
 
 function buildKpis() {
   const state = summarizeState();
-  const bankroll = state.available ? (state.bankrollUsd ?? config.bankrollUsd) : config.bankrollUsd;
+  const snapshot = readSnapshot();
+  const bankroll =
+    snapshot?.bankrollUsd ?? (state.available ? (state.bankrollUsd ?? config.bankrollUsd) : config.bankrollUsd);
   const trades = readLines<TradeRecord>(store.tradesPath, 5_000);
   const closed = trades
     .filter((trade) => typeof trade.pnlUsd === "number")
     .slice()
     .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts));
 
-  let equity = bankroll;
-  const equitySeries: { ts: number; equity: number }[] = [{ ts: Date.now(), equity }];
+  const tradePnlSum = closed.reduce((sum, trade) => sum + (trade.pnlUsd ?? 0), 0);
+  const engineRealizedPnl = snapshot?.realizedPnlUsd ?? (state.available ? state.realizedPnlUsd ?? 0 : 0);
+  const realizedPnlUsd = engineRealizedPnl !== 0 ? engineRealizedPnl : tradePnlSum;
+  const equityUsd =
+    snapshot && Math.abs(snapshot.equityUsd - (bankroll + realizedPnlUsd)) < 1
+      ? snapshot.equityUsd
+      : bankroll + realizedPnlUsd;
+
+  let curveEquity = bankroll;
+  const equitySeries: { ts: number; equity: number }[] = [];
+  if (closed.length > 0 && closed[0]) {
+    const firstTradeTs = Date.parse(closed[0].ts) - 60_000;
+    equitySeries.push({ ts: firstTradeTs, equity: Math.round(curveEquity * 100) / 100 });
+  } else {
+    equitySeries.push({ ts: Date.now(), equity: Math.round(curveEquity * 100) / 100 });
+  }
   const byInterval = new Map<Interval, { trades: number; wins: number; pnlUsd: number }>();
   let wins = 0;
   let losses = 0;
@@ -113,8 +129,8 @@ function buildKpis() {
 
   for (const trade of closed) {
     const pnl = trade.pnlUsd ?? 0;
-    equity += pnl;
-    equitySeries.push({ ts: Date.parse(trade.ts), equity });
+    curveEquity += pnl;
+    equitySeries.push({ ts: Date.parse(trade.ts), equity: Math.round(curveEquity * 100) / 100 });
 
     if (pnl > 0) {
       wins += 1;
@@ -136,10 +152,18 @@ function buildKpis() {
   }
 
   const closedTrades = closed.length;
+  const tradesToday = state.available ? state.tradesToday ?? 0 : 0;
+  // The engine counted fills that this directory's log cannot show: the classic
+  // symptom of a dashboard pointed at a different `.state` than the bot.
+  const tradeLogMissing = closedTrades === 0 && tradesToday > 0;
   return {
     bankrollUsd: bankroll,
-    equityUsd: Math.round(equity * 100) / 100,
-    netPnlUsd: Math.round((equity - bankroll) * 100) / 100,
+    equityUsd: Math.round(equityUsd * 100) / 100,
+    netPnlUsd: Math.round((equityUsd - bankroll) * 100) / 100,
+    realizedPnlUsd: Math.round(realizedPnlUsd * 100) / 100,
+    tradesToday,
+    tradeLogMissing,
+    dataDir: config.dataDir,
     closedTrades,
     wins,
     losses,
@@ -151,7 +175,7 @@ function buildKpis() {
     largestLossUsd: largestLoss,
     openPositions: state.available ? (state.openPositions ?? 0) : 0,
     byInterval: [...byInterval.entries()].map(([interval, value]) => ({ interval, ...value })),
-    equitySeries: equitySeries.slice(-200),
+    equitySeries: [...equitySeries, { ts: Date.now(), equity: Math.round(equityUsd * 100) / 100 }].slice(-200),
     recentClosed: closed.slice(-12).reverse(),
   };
 }
@@ -270,12 +294,17 @@ const server = Bun.serve({
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(origin) });
 
+    if (url.pathname === "/" && request.method === "GET") {
+      return Response.redirect("http://localhost:5173/", 302);
+    }
+
     if (url.pathname === "/api/bot/health") {
       const snapshot = readSnapshot();
       return json(
         {
           ok: true,
           dataDir: config.dataDir,
+          tradeLog: { path: store.tradesPath, exists: existsSync(store.tradesPath) },
           killSwitch: store.killSwitchActive(),
           snapshotAgeMs: snapshot ? Date.now() - Date.parse(snapshot.updatedAt) : null,
         },
@@ -310,7 +339,8 @@ const server = Bun.serve({
     }
 
     if (url.pathname === "/api/bot/config" && request.method === "GET") {
-      return json({ config: publicConfig(config), configFile: "bot/config.json" }, 200, origin);
+      config = loadConfig({ live: config.live });
+      return json({ config: publicConfig(config), configFile: "config.json" }, 200, origin);
     }
 
     if (url.pathname === "/api/bot/config" && request.method === "PUT") {
@@ -320,11 +350,21 @@ const server = Bun.serve({
       const { changes, warnings } = normalizeConfigPatch(body);
       if (Object.keys(changes).length === 0) return json({ error: "No editable fields in that payload.", warnings }, 400, origin);
       writeConfigChanges(changes);
+      config = loadConfig({ live: config.live });
       // A running engine reloads on its next tick instead of needing a restart.
       store.ensure();
       writeFileSync(store.configMarkerPath, `${new Date().toISOString()}\n`, "utf8");
       log("info", "configuration saved via dashboard", { fields: Object.keys(changes).length, warnings: warnings.length });
-      return json({ config: publicConfig(loadConfig({ live: config.live })), warnings }, 200, origin);
+      return json({ config: publicConfig(config), warnings }, 200, origin);
+    }
+
+    if (url.pathname === "/api/bot/resume" && request.method === "POST") {
+      if (!mutationAllowed(origin)) return json({ error: "Cross-origin request refused." }, 403, origin);
+      store.ensure();
+      writeFileSync(store.resumeMarkerPath, `${new Date().toISOString()}\n`, "utf8");
+      if (existsSync(store.killSwitchPath)) rmSync(store.killSwitchPath);
+      log("risk", "resume requested via dashboard: clearing halts and release pause");
+      return json({ ok: true, killSwitch: false }, 200, origin);
     }
 
     if (url.pathname === "/api/bot/kill-switch" && request.method === "POST") {
