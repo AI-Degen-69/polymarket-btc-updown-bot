@@ -5,17 +5,20 @@ import {
   Clock,
   Coins,
   Gauge,
+  LogOut,
   Percent,
   ShieldAlert,
+  ShieldCheck,
+  Sigma,
   SlidersHorizontal,
   Target,
   TrendingUp,
   Zap,
 } from 'lucide-react'
-import { useState, type KeyboardEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 
-import { Badge, Card, PageHeader } from '../components/ui'
+import { Badge, Button, Card, PageHeader } from '../components/ui'
 
 // ----------------------------------------------------------------------
 // DATA DEFINITIONS & THRESHOLDS
@@ -139,38 +142,87 @@ const EXIT_SCENARIOS = [
 ]
 
 // ----------------------------------------------------------------------
+// TABLE OF CONTENTS (scroll-spy)
+// ----------------------------------------------------------------------
+
+const TOC = [
+  {
+    id: 'strategy-timeline',
+    label: 'Window Timeline & Walkthrough',
+    short: '1. Window Timeline',
+    icon: Clock,
+    children: [
+      { id: 'timeline-anatomy', label: '15-Minute Market Anatomy' },
+      { id: 'timeline-walkthrough', label: 'The Signature Trade Setup' },
+      { id: 'entry-gates', label: 'The Six Entry Gates' },
+    ],
+  },
+  {
+    id: 'strategy-math',
+    label: 'Mathematical Formulation & Edge Model',
+    short: '2. Math & Edge Model',
+    icon: Sigma,
+    children: [
+      { id: 'formula-probability', label: 'Log-Normal Probability Model' },
+      { id: 'formula-fees', label: 'Taker Fee Schedule' },
+      { id: 'formula-edge', label: 'Net Edge Threshold' },
+      { id: 'formula-kelly', label: 'Quarter Kelly Sizing' },
+    ],
+  },
+  {
+    id: 'strategy-exits',
+    label: 'Mechanical Exit Matrix & Scenarios',
+    short: '3. Exit Matrix',
+    icon: LogOut,
+    children: [
+      { id: 'exit-matrix', label: 'Exit Scenarios' },
+      { id: 'exit-grace', label: 'Hysteresis Grace Window' },
+    ],
+  },
+  {
+    id: 'strategy-risk',
+    label: 'Capital Sizing & Risk Discipline',
+    short: '4. Capital & Risk',
+    icon: ShieldCheck,
+    children: [
+      { id: 'risk-kelly', label: 'Fractional Kelly vs Martingale' },
+      { id: 'risk-breakers', label: 'Deterministic Circuit Breakers' },
+    ],
+  },
+] as const
+
+const TOC_IDS = TOC.flatMap((item) => [item.id, ...item.children.map((child) => child.id)])
+
+// ----------------------------------------------------------------------
 // MAIN COMPONENT
 // ----------------------------------------------------------------------
 
-const TAB_LIST = [
-  { id: 'visual', label: '1. Window Timeline & Real Trade Walkthrough' },
-  { id: 'math', label: '2. Mathematical Formulation & Edge Model' },
-  { id: 'exits', label: '3. Mechanical Exit Matrix & Scenarios' },
-  { id: 'risk', label: '4. Capital Sizing & Risk Discipline' },
-] as const
-type TabId = (typeof TAB_LIST)[number]['id']
-
 export function Strategy() {
-  const [activeTab, setActiveTab] = useState<TabId>('visual')
+  const [activeId, setActiveId] = useState<string>(TOC[0].id)
 
-  const onTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End']
-    if (!keys.includes(event.key)) return
-    event.preventDefault()
-    const ids = TAB_LIST.map((tab) => tab.id)
-    const index = ids.indexOf(activeTab)
-    const next =
-      event.key === 'Home'
-        ? ids[0]!
-        : event.key === 'End'
-          ? ids[ids.length - 1]!
-          : ids[(index + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length]!
-    setActiveTab(next)
-    document.getElementById(`strategy-tab-${next}`)?.focus()
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) setActiveId(entry.target.id)
+        }
+      },
+      { rootMargin: '-10% 0px -70% 0px' },
+    )
+    for (const id of TOC_IDS) {
+      const el = document.getElementById(id)
+      if (el) observer.observe(el)
+    }
+    return () => observer.disconnect()
+  }, [])
+
+  const jumpTo = (id: string) => {
+    setActiveId(id)
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   return (
-    <div className="mx-auto max-w-[1080px] p-5 sm:p-8">
+    <div className="mx-auto max-w-[1180px] p-5 sm:p-8">
       <PageHeader
         title="Strategy & Architecture"
         subtitle="Johannes Thüroff’s tested Polymarket 5-Minute Strategy — timings, mathematics, and execution rules."
@@ -228,39 +280,34 @@ export function Strategy() {
         </div>
       </Card>
 
-      {/* Visual Navigation Tabs */}
-      <div
-        role="tablist"
-        aria-label="Strategy sections"
-        onKeyDown={onTabListKeyDown}
-        className="mt-8 flex flex-wrap gap-2 border-b border-line pb-3"
-      >
-        {TAB_LIST.map((tab) => (
-          <button
-            key={tab.id}
-            id={`strategy-tab-${tab.id}`}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
-            aria-controls={`strategy-panel-${tab.id}`}
-            tabIndex={activeTab === tab.id ? 0 : -1}
-            onClick={() => setActiveTab(tab.id)}
-            className={`cursor-pointer rounded-tile px-3.5 py-1.5 text-[13px] font-medium transition-all ${
-              activeTab === tab.id
-                ? 'bg-fg text-surface shadow-sm'
-                : 'text-muted hover:bg-surface-2 hover:text-fg'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Section quick-jump buttons — single row, real Button components */}
+      <div className="mt-6 flex gap-2 overflow-x-auto pb-1" aria-label="Jump to section">
+        {TOC.map((item) => {
+          const isActive = activeId === item.id || item.children.some((child) => child.id === activeId)
+          const Icon = item.icon
+          return (
+            <Button
+              key={item.id}
+              variant={isActive ? 'primary' : 'secondary'}
+              size="md"
+              onClick={() => jumpTo(item.id)}
+              className="min-w-[170px] flex-1 whitespace-nowrap"
+              aria-current={isActive ? 'true' : undefined}
+            >
+              <Icon />
+              {item.short}
+            </Button>
+          )
+        })}
       </div>
 
-      {/* TAB 1: VISUAL TIMELINE & WALKTHROUGH */}
-      {activeTab === 'visual' && (
-        <div id="strategy-panel-visual" role="tabpanel" aria-labelledby="strategy-tab-visual" className="mt-6 space-y-6">
+      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_236px]">
+        <div className="min-w-0 space-y-6">
+
+      {/* SECTION 1: VISUAL TIMELINE & WALKTHROUGH */}
+      <section id="strategy-timeline" aria-label="Window timeline and real trade walkthrough" className="scroll-mt-16 space-y-6">
           {/* Section: Window Timeline Diagram */}
-          <Card className="p-6">
+          <Card id="timeline-anatomy" className="scroll-mt-16 p-6">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-[16px] font-semibold text-fg">15-Minute Market Anatomy</h3>
@@ -323,7 +370,7 @@ export function Strategy() {
           </Card>
 
           {/* Section: The Real Trade Walkthrough SVG Chart */}
-          <Card className="p-6">
+          <Card id="timeline-walkthrough" className="scroll-mt-16 p-6">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-[16px] font-semibold text-fg">The Signature Trade Setup (Guide's Real Win)</h3>
@@ -419,7 +466,7 @@ export function Strategy() {
           </Card>
 
           {/* Section: The Six Entry Gates Breakdown */}
-          <section>
+          <section id="entry-gates" className="scroll-mt-16">
             <h3 className="text-[16px] font-semibold text-fg">The Six Mandatory Entry Gates</h3>
             <p className="mt-0.5 text-[13px] text-muted">All six gates must evaluate to true. If any single gate fails, the trade is skipped.</p>
 
@@ -452,12 +499,10 @@ export function Strategy() {
               })}
             </div>
           </section>
-        </div>
-      )}
+      </section>
 
-      {/* TAB 2: MATHEMATICAL FORMULATIONS */}
-      {activeTab === 'math' && (
-        <div id="strategy-panel-math" role="tabpanel" aria-labelledby="strategy-tab-math" className="mt-6 space-y-6">
+      {/* SECTION 2: MATHEMATICAL FORMULATIONS */}
+      <section id="strategy-math" aria-label="Mathematical formulation and edge model" className="scroll-mt-16 space-y-6">
           <Card className="p-6">
             <h3 className="text-[16px] font-semibold text-fg">Mathematical Models & Pricing Formulations</h3>
             <p className="text-[13px] text-muted">
@@ -466,7 +511,7 @@ export function Strategy() {
 
             <div className="mt-6 space-y-6">
               {/* Formula 1: Drift-Adjusted Probability Model */}
-              <div className="rounded-card border border-line bg-surface-2/30 p-5">
+              <div id="formula-probability" className="scroll-mt-16 rounded-card border border-line bg-surface-2/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-[14.5px] font-bold text-fg">1. Log-Normal Probability Model with Momentum Drift</h4>
                   <Badge tone="accent">Drifted Brownian Motion</Badge>
@@ -516,7 +561,7 @@ export function Strategy() {
               </div>
 
               {/* Formula 2: Crypto Taker Fee Schedule */}
-              <div className="rounded-card border border-line bg-surface-2/30 p-5">
+              <div id="formula-fees" className="scroll-mt-16 rounded-card border border-line bg-surface-2/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-[14.5px] font-bold text-fg">2. Polymarket Crypto Category Taker Fee Schedule</h4>
                   <Badge tone="warning">Variable Quadratic Fee</Badge>
@@ -540,7 +585,7 @@ export function Strategy() {
               </div>
 
               {/* Formula 3: Statistical Edge Criterion */}
-              <div className="rounded-card border border-line bg-surface-2/30 p-5">
+              <div id="formula-edge" className="scroll-mt-16 rounded-card border border-line bg-surface-2/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-[14.5px] font-bold text-fg">3. Net Statistical Edge Threshold</h4>
                   <Badge tone="success">Hard Gate ≥ 6¢</Badge>
@@ -564,7 +609,7 @@ export function Strategy() {
               </div>
 
               {/* Formula 4: Fractional Kelly Sizing */}
-              <div className="rounded-card border border-line bg-surface-2/30 p-5">
+              <div id="formula-kelly" className="scroll-mt-16 rounded-card border border-line bg-surface-2/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-[14.5px] font-bold text-fg">4. Quarter Kelly Position Sizing Formula</h4>
                   <Badge tone="info">Risk Allocation</Badge>
@@ -606,13 +651,11 @@ export function Strategy() {
               </div>
             </div>
           </Card>
-        </div>
-      )}
+      </section>
 
-      {/* TAB 3: EXIT MATRIX */}
-      {activeTab === 'exits' && (
-        <div id="strategy-panel-exits" role="tabpanel" aria-labelledby="strategy-tab-exits" className="mt-6 space-y-6">
-          <Card className="p-6">
+      {/* SECTION 3: EXIT MATRIX */}
+      <section id="strategy-exits" aria-label="Mechanical exit matrix and scenarios" className="scroll-mt-16 space-y-6">
+          <Card id="exit-matrix" className="scroll-mt-16 p-6">
             <h3 className="text-[16px] font-semibold text-fg">The Mechanical Exit Matrix</h3>
             <p className="text-[13px] text-muted">
               Pre-programmed, non-emotional exits executed automatically by the bot loop.
@@ -642,7 +685,7 @@ export function Strategy() {
           </Card>
 
           {/* Grace Window Visual Note */}
-          <Card className="border-accent/30 bg-accent-soft/20 p-5">
+          <Card id="exit-grace" className="scroll-mt-16 border-accent/30 bg-accent-soft/20 p-5">
             <div className="flex items-start gap-3">
               <Zap className="size-5 shrink-0 text-accent mt-0.5" />
               <div>
@@ -655,19 +698,17 @@ export function Strategy() {
               </div>
             </div>
           </Card>
-        </div>
-      )}
+      </section>
 
-      {/* TAB 4: RISK & SIZING */}
-      {activeTab === 'risk' && (
-        <div id="strategy-panel-risk" role="tabpanel" aria-labelledby="strategy-tab-risk" className="mt-6 space-y-6">
+      {/* SECTION 4: RISK & SIZING */}
+      <section id="strategy-risk" aria-label="Capital sizing and risk discipline" className="scroll-mt-16 space-y-6">
           <Card className="p-6">
             <h3 className="text-[16px] font-semibold text-fg">Capital Preservation & Risk Discipline</h3>
             <p className="text-[13px] text-muted">
               Why 60% win-rate traders blow up without sizing rules, and how this bot prevents gambler's ruin.
             </p>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <div id="risk-kelly" className="mt-6 grid scroll-mt-16 gap-4 sm:grid-cols-2">
               {/* Card 1: Quarter Kelly */}
               <div className="rounded-tile border border-success/30 bg-success-soft/20 p-5">
                 <span className="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider text-success">
@@ -701,7 +742,7 @@ export function Strategy() {
             </div>
 
             {/* Hard Stop Parameters */}
-            <div className="mt-6 border-t border-line pt-5">
+            <div id="risk-breakers" className="mt-6 scroll-mt-16 border-t border-line pt-5">
               <h4 className="text-[14px] font-bold text-fg">Deterministic Circuit Breakers</h4>
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-tile border border-line bg-surface p-3.5">
@@ -724,8 +765,60 @@ export function Strategy() {
               </div>
             </div>
           </Card>
+      </section>
         </div>
-      )}
+
+        {/* Side table of contents — jumps to sections, scroll-spy highlights current */}
+        <aside className="hidden lg:block">
+          <nav aria-label="Table of contents" className="sticky top-6 rounded-card border border-line bg-surface-2/30 p-4">
+            <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-faint">On this page</p>
+            <ul className="mt-2 space-y-1.5">
+              {TOC.map((item) => {
+                const isActive = activeId === item.id || item.children.some((child) => child.id === activeId)
+                return (
+                  <li key={item.id}>
+                    <a
+                      href={`#${item.id}`}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        jumpTo(item.id)
+                      }}
+                      aria-current={isActive ? 'location' : undefined}
+                      className={`block rounded-tile px-2 py-1.5 text-[12.5px] leading-snug transition-colors ${
+                        isActive ? 'bg-surface font-semibold text-accent shadow-sm' : 'font-medium text-muted hover:bg-surface hover:text-fg'
+                      }`}
+                    >
+                      {item.label}
+                    </a>
+                    <ul className="ml-2 mt-0.5 space-y-0.5 border-l border-line pl-3">
+                      {item.children.map((child) => {
+                        const childActive = activeId === child.id
+                        return (
+                          <li key={child.id}>
+                            <a
+                              href={`#${child.id}`}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                jumpTo(child.id)
+                              }}
+                              aria-current={childActive ? 'location' : undefined}
+                              className={`block rounded-tile px-2 py-1 text-[12px] leading-snug transition-colors ${
+                                childActive ? 'font-semibold text-accent' : 'text-faint hover:text-fg'
+                              }`}
+                            >
+                              {child.label}
+                            </a>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </li>
+                )
+              })}
+            </ul>
+          </nav>
+        </aside>
+      </div>
 
       {/* Footer attribution */}
       <Card className="mt-6 flex flex-wrap items-center justify-between gap-3 p-5">
