@@ -59,8 +59,8 @@ export const invalidInputClass =
   'h-9 w-full min-w-0 rounded-control border border-danger bg-surface px-3 text-[13.5px] text-fg placeholder:text-faint transition-[border-color,box-shadow] focus:border-danger focus:outline-none focus:ring-[3px] focus:ring-danger/15 disabled:opacity-60'
 
 export function Input({ className, id, invalid, ...rest }: ComponentPropsWithoutRef<'input'> & { invalid?: boolean }) {
-  const fieldId = useFieldId()
-  return <input id={id ?? fieldId} aria-invalid={invalid || undefined} className={cx(invalid ? invalidInputClass : inputClass, className)} {...rest} />
+  const { id: fieldId, errorId } = useFieldId()
+  return <input id={id ?? fieldId} aria-invalid={invalid || undefined} aria-describedby={errorId} className={cx(invalid ? invalidInputClass : inputClass, className)} {...rest} />
 }
 
 export function Textarea({ className, ...rest }: ComponentPropsWithoutRef<'textarea'>) {
@@ -68,10 +68,10 @@ export function Textarea({ className, ...rest }: ComponentPropsWithoutRef<'texta
 }
 
 export function Select({ className, children, id, ...rest }: ComponentPropsWithoutRef<'select'>) {
-  const fieldId = useFieldId()
+  const { id: fieldId, errorId } = useFieldId()
   return (
     <span className={cx('relative block', className)}>
-      <select id={id ?? fieldId} className={cx(inputClass, 'appearance-none pr-9')} {...rest}>
+      <select id={id ?? fieldId} aria-describedby={errorId} className={cx(inputClass, 'appearance-none pr-9')} {...rest}>
         {children}
       </select>
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
@@ -96,6 +96,8 @@ export function Checkbox({ className, ...rest }: ComponentPropsWithoutRef<'input
 
 export function Field({ label, children, hint, tip, error, className }: { label: string; children: ReactNode; hint?: string; tip?: ReactNode; error?: string; className?: string }) {
   const id = useId()
+  const tipId = useId()
+  const errorId = `${id}-error`
   return (
     <div className={cx('flex flex-col gap-1.5', className)}>
       <label htmlFor={id} className="flex w-fit min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
@@ -105,11 +107,13 @@ export function Field({ label, children, hint, tip, error, className }: { label:
             <span
               tabIndex={0}
               aria-label={`About: ${label}`}
+              aria-describedby={tipId}
               className="cursor-help rounded-full text-faint transition-colors hover:text-fg focus-visible:text-fg"
             >
               <Info className="size-3.5" aria-hidden="true" />
             </span>
             <span
+              id={tipId}
               role="tooltip"
               className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 hidden w-72 rounded-tile bg-fg px-3 py-2.5 text-surface shadow-pop group-hover/tip:block group-focus-within/tip:block"
             >
@@ -118,13 +122,14 @@ export function Field({ label, children, hint, tip, error, className }: { label:
           </span>
         )}
       </label>
-      <FieldIdContext.Provider value={id}>{children}</FieldIdContext.Provider>
-      {error && <span role="alert" className="text-[11.5px] font-medium text-danger">{error}</span>}
+      <FieldIdContext.Provider value={{ id, errorId: error ? errorId : undefined }}>{children}</FieldIdContext.Provider>
+      {error && <span id={errorId} role="alert" className="text-[11.5px] font-medium text-danger">{error}</span>}
       {!error && hint && <span className="text-[12px] text-faint">{hint}</span>}
     </div>
   )
 }
-const FieldIdContext = createContext<string | undefined>(undefined)
+type FieldIds = { id: string | undefined; errorId: string | undefined }
+const FieldIdContext = createContext<FieldIds>({ id: undefined, errorId: undefined })
 export const useFieldId = () => useContext(FieldIdContext)
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info'

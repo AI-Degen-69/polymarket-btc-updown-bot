@@ -107,6 +107,7 @@
     background: var(--color-bg);
     overscroll-behavior: none;
     height: 100%;
+    scroll-behavior: smooth;
   }
   body {
     background: var(--color-bg);
