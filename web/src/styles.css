@@ -123,6 +123,12 @@
   #root {
     height: 100%;
   }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+  }
   button,
   input,
   select,

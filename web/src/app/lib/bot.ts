@@ -147,6 +147,7 @@ export interface BotConfigView {
     minMovePct: number
     maxMovePct: number
     minHourlyRangePct: number
+    tightChopRangeUsd: number
     maxSpreadCents: number
     noisePct: number
     nonLiveAnchorExtraMovePct: number

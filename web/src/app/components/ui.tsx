@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { ChevronDown, Loader2, X } from 'lucide-react'
+import { ChevronDown, Info, Loader2, X } from 'lucide-react'
 import {
   createContext,
   useCallback,
@@ -24,10 +24,10 @@ type ButtonSize = 'md' | 'sm' | 'icon' | 'icon-sm'
 const buttonBase =
   'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0'
 const buttonVariants: Record<ButtonVariant, string> = {
-  primary: 'bg-fg text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-[#26262c]',
+  primary: 'bg-fg text-surface shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-fg/85',
   secondary: 'border border-line-strong bg-surface text-fg shadow-[0_1px_1px_rgb(20_20_24/0.04)] hover:bg-surface-2',
   ghost: 'text-muted hover:bg-surface-2 hover:text-fg',
-  danger: 'bg-danger text-white hover:bg-[#bf3b26]',
+  danger: 'bg-danger text-surface hover:bg-danger/85',
 }
 const buttonSizes: Record<ButtonSize, string> = {
   md: 'h-9 px-3.5 text-[13.5px]',
@@ -53,19 +53,26 @@ export function Button({
 
 export const inputClass =
   'h-9 w-full min-w-0 rounded-control border border-line-strong bg-surface px-3 text-[13.5px] text-fg placeholder:text-faint transition-[border-color,box-shadow] focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/15 disabled:opacity-60'
+// Same control with a danger outline, for out-of-range values.
+export const invalidInputClass = inputClass
+  .replace('border-line-strong', 'border-danger')
+  .replace('focus:border-accent', 'focus:border-danger')
+  .replace('focus:ring-accent/15', 'focus:ring-danger/15')
 
-export function Input({ className, ...rest }: ComponentPropsWithoutRef<'input'>) {
-  return <input className={cx(inputClass, className)} {...rest} />
+export function Input({ className, id, invalid, ...rest }: ComponentPropsWithoutRef<'input'> & { invalid?: boolean }) {
+  const fieldId = useFieldId()
+  return <input id={id ?? fieldId} aria-invalid={invalid || undefined} className={cx(invalid ? invalidInputClass : inputClass, className)} {...rest} />
 }
 
 export function Textarea({ className, ...rest }: ComponentPropsWithoutRef<'textarea'>) {
   return <textarea className={cx(inputClass, 'h-auto min-h-[88px] resize-y py-2 leading-relaxed', className)} {...rest} />
 }
 
-export function Select({ className, children, ...rest }: ComponentPropsWithoutRef<'select'>) {
+export function Select({ className, children, id, ...rest }: ComponentPropsWithoutRef<'select'>) {
+  const fieldId = useFieldId()
   return (
     <span className={cx('relative block', className)}>
-      <select className={cx(inputClass, 'appearance-none pr-9')} {...rest}>
+      <select id={id ?? fieldId} className={cx(inputClass, 'appearance-none pr-9')} {...rest}>
         {children}
       </select>
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
@@ -88,14 +95,34 @@ export function Checkbox({ className, ...rest }: ComponentPropsWithoutRef<'input
   )
 }
 
-export function Field({ label, children, hint, className }: { label: string; children: ReactNode; hint?: string; className?: string }) {
+export function Field({ label, children, hint, tip, error, className }: { label: string; children: ReactNode; hint?: string; tip?: ReactNode; error?: string; className?: string }) {
   const id = useId()
   return (
-    <label htmlFor={id} className={cx('flex flex-col gap-1.5', className)}>
-      <span className="text-[13px] font-medium text-fg">{label}</span>
+    <div className={cx('flex flex-col gap-1.5', className)}>
+      <label htmlFor={id} className="flex w-fit min-w-0 items-center gap-1.5 text-[13px] font-medium text-fg">
+        <span className="truncate" title={label}>{label}</span>
+        {tip && (
+          <span className="group/tip relative inline-flex">
+            <span
+              tabIndex={0}
+              aria-label={`About: ${label}`}
+              className="cursor-help rounded-full text-faint transition-colors hover:text-fg focus-visible:text-fg"
+            >
+              <Info className="size-3.5" aria-hidden="true" />
+            </span>
+            <span
+              role="tooltip"
+              className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 hidden w-72 rounded-tile bg-fg px-3 py-2.5 text-surface shadow-pop group-hover/tip:block group-focus-within/tip:block"
+            >
+              {tip}
+            </span>
+          </span>
+        )}
+      </label>
       <FieldIdContext.Provider value={id}>{children}</FieldIdContext.Provider>
-      {hint && <span className="text-[12px] text-faint">{hint}</span>}
-    </label>
+      {error && <span role="alert" className="text-[11.5px] font-medium text-danger">{error}</span>}
+      {!error && hint && <span className="text-[12px] text-faint">{hint}</span>}
+    </div>
   )
 }
 const FieldIdContext = createContext<string | undefined>(undefined)
@@ -241,7 +268,7 @@ export function Dialog({
       {open && (
         <motion.div
           key="overlay"
-          className="fixed inset-0 z-50 flex items-end justify-center bg-fg/30 p-4 backdrop-blur-[2px] sm:items-center"
+          className="fixed inset-0 z-50 flex items-end justify-center bg-fg/30 p-4 backdrop-blur-[2px] sm:items-center cursor-pointer"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -299,7 +326,7 @@ export function Drawer({
       {open && (
         <motion.div
           key="overlay"
-          className="fixed inset-0 z-50 bg-fg/20"
+          className="fixed inset-0 z-50 cursor-pointer bg-fg/20"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -369,71 +396,6 @@ export function ConfirmDialog({
   )
 }
 
-// Menus: a small popover anchored to its trigger.
-export function Menu({
-  trigger,
-  items,
-  align = 'end',
-}: {
-  trigger: ReactNode
-  items: { label: string; onSelect: () => void; danger?: boolean; icon?: ReactNode }[]
-  align?: 'start' | 'end'
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false)
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-  return (
-    <div ref={ref} className="relative inline-flex">
-      <span onClick={(e) => (e.stopPropagation(), setOpen((v) => !v))} className="inline-flex">
-        {trigger}
-      </span>
-      <AnimatePresence>
-        {open && (
-          <motion.ul
-            role="menu"
-            initial={{ opacity: 0, y: 4, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.98 }}
-            transition={{ duration: 0.14 }}
-            className={cx('absolute top-full z-40 mt-1 min-w-[180px] rounded-[14px] bg-surface p-1 shadow-pop', align === 'end' ? 'right-0' : 'left-0')}
-          >
-            {items.map((item) => (
-              <li key={item.label}>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setOpen(false)
-                    item.onSelect()
-                  }}
-                  className={cx(
-                    'flex h-9 w-full items-center gap-2 rounded-tile px-2.5 text-left text-[13.5px] transition-colors [&_svg]:size-4',
-                    item.danger ? 'text-danger hover:bg-danger-soft' : 'text-fg hover:bg-surface-2',
-                  )}
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              </li>
-            ))}
-          </motion.ul>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
 // Toasts
 type Toast = { id: number; message: string; tone: 'neutral' | 'danger' }
 const ToastContext = createContext<(message: string, tone?: Toast['tone']) => void>(() => {})
@@ -459,7 +421,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               exit={{ opacity: 0, y: 8, scale: 0.96 }}
               className={cx(
                 'pointer-events-auto rounded-control px-4 py-2.5 text-[13.5px] font-medium shadow-pop',
-                t.tone === 'danger' ? 'bg-danger text-white' : 'bg-fg text-white',
+                t.tone === 'danger' ? 'bg-danger text-surface' : 'bg-fg text-surface',
               )}
             >
               {t.message}
