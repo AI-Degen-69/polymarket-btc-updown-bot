@@ -16,15 +16,15 @@ unless you pass `--live`.**
 | Guide rule | Implementation |
 | --- | --- |
 | "No entry in the first 5 minutes" | `intervalParams["15m"].observationSeconds = 300` (100s for 5m markets) — `src/signals.ts` |
-| "Direction held for ≥ 60 seconds" | Every price sample in the last 60s must sit on the same side of the anchor, outside a noise band |
-| "Odds are still mispriced" | Log-normal model `p = Φ(ln(price/anchor) / (σ·√τ))`, then `edge = p − ask − taker fee`, requiring `edge ≥ 0.06` |
+| "Direction held for ≥ 60 seconds" | Post-shakeout direction (continuation or reversal recovery) must hold for at least 60s outside noise band — `src/signals.ts` |
+| "Odds are still mispriced" | Log-normal model with post-shakeout momentum drift `p = Φ((ln(price/anchor) + μ·τ) / (σ·√τ))`, requiring `edge ≥ 0.06` |
 | "No scheduled news before resolution" | `news.events` ISO list with a ±15-minute blackout — `src/news.ts` |
-| "Sit out low-volatility grind" | Skip when BTC's 1-hour range is under `minHourlyRangePct` (0.3%); needs 15 minutes of sampled history, so it is inactive right after a fresh start |
+| "Sit out low-volatility grind & tight chop" | Skip when BTC 1-hour range is under `minHourlyRangePct` (0.3%) or observation range is under `tightChopRangeUsd` ($50) |
 | "Only trade when the spread is ≤ 2¢" | `maxSpreadCents: 2`, read from the live CLOB book |
 | "Don't chase the move" | Skip once the move exceeds `maxMovePct` (0.5%) |
 | "Size by edge, ¼ Kelly" | `kellyFraction(p, price+fee) × 0.25`, hard-capped at 8% of bankroll (~$80 per $1,000) |
 | "Lock profit at 85–90¢" | Sell at the bid when it reaches `profitTargetCents: 0.85` |
-| "Odds stall at 60–70¢ for 3+ minutes" | Stall timer per position, exits after `stallSeconds` |
+| "Odds stall at 60–70¢ for 3+ minutes" | Stall timer per position with 15s grace window for order book quote jitter, exits after `stallSeconds` |
 | "Odds reverse below entry → hold" | Holds while the thesis is intact |
 | "Reverse to 20¢ → accept the loss" | Holds to resolution below `acceptLossBelowCents: 0.20` |
 | "Sell immediately on news" | News blackout flips open positions to sell |

@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   if (command === "status") {
     const config = loadConfig();
     const store = new Store(config.dataDir);
-    const state = store.load(config.bankrollUsd);
+    const state = store.load(config.bankrollUsd, config.risk.dailyLossLimitPct);
     const equity = state.bankrollUsd + state.risk.realizedPnlUsd;
     log("info", "status", {
       mode: config.live ? "live" : "paper",

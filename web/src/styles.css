@@ -1,0 +1,161 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+
+:root {
+  --color-bg: #f5f5f7;
+  --color-surface: #ffffff;
+  --color-surface-2: #f3f3f5;
+  --color-raised: #ebebef;
+  --color-line: #e7e7ec;
+  --color-line-strong: #d7d7df;
+  --color-fg: #141418;
+  --color-muted: #6a6a76;
+  --color-faint: #9b9ba6;
+  --color-accent: #5a55de;
+  --color-accent-soft: #eeedfc;
+  --color-success: #1d9a66;
+  --color-success-soft: #e5f6ed;
+  --color-warning: #c27a12;
+  --color-warning-soft: #fdf1df;
+  --color-danger: #d4462f;
+  --color-danger-soft: #fdebe8;
+  --color-info: #2f77d1;
+  --color-info-soft: #e8f1fd;
+
+  --shadow-card: 0 1px 2px rgb(20 20 24 / 0.04), 0 0 0 1px rgb(20 20 24 / 0.04);
+  --shadow-pop: 0 0 0 1px rgb(20 20 24 / 0.06), 0 12px 40px -12px rgb(20 20 24 / 0.25);
+  --shadow-dialog: 0 0 0 1px rgb(20 20 24 / 0.06), 0 30px 80px -20px rgb(20 20 24 / 0.35);
+
+  color-scheme: light;
+}
+
+:root[data-theme='dark'],
+:root.dark {
+  --color-bg: #090a0f;
+  --color-surface: #11131a;
+  --color-surface-2: #171a23;
+  --color-raised: #1f2330;
+  --color-line: #232836;
+  --color-line-strong: #333a4d;
+  --color-fg: #f0f2f5;
+  --color-muted: #9aa2b1;
+  --color-faint: #626a7a;
+  --color-accent: #6b66f2;
+  --color-accent-soft: rgba(107, 102, 242, 0.16);
+  --color-success: #22c55e;
+  --color-success-soft: rgba(34, 197, 94, 0.16);
+  --color-warning: #f59e0b;
+  --color-warning-soft: rgba(245, 158, 11, 0.16);
+  --color-danger: #f87171;
+  --color-danger-soft: rgba(248, 113, 113, 0.16);
+  --color-info: #60a5fa;
+  --color-info-soft: rgba(96, 165, 250, 0.16);
+
+  --shadow-card: 0 1px 3px rgb(0 0 0 / 0.3), 0 0 0 1px rgb(255 255 255 / 0.06);
+  --shadow-pop: 0 0 0 1px rgb(255 255 255 / 0.08), 0 16px 48px -12px rgb(0 0 0 / 0.6);
+  --shadow-dialog: 0 0 0 1px rgb(255 255 255 / 0.1), 0 32px 80px -20px rgb(0 0 0 / 0.7);
+
+  color-scheme: dark;
+}
+
+@theme {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-raised: var(--color-raised);
+  --color-line: var(--color-line);
+  --color-line-strong: var(--color-line-strong);
+  --color-fg: var(--color-fg);
+  --color-muted: var(--color-muted);
+  --color-faint: var(--color-faint);
+  --color-accent: var(--color-accent);
+  --color-accent-soft: var(--color-accent-soft);
+  --color-success: var(--color-success);
+  --color-success-soft: var(--color-success-soft);
+  --color-warning: var(--color-warning);
+  --color-warning-soft: var(--color-warning-soft);
+  --color-danger: var(--color-danger);
+  --color-danger-soft: var(--color-danger-soft);
+  --color-info: var(--color-info);
+  --color-info-soft: var(--color-info-soft);
+
+  --radius-control: 12px;
+  --radius-card: 18px;
+  --radius-dialog: 22px;
+  --radius-tile: 10px;
+
+  --shadow-card: var(--shadow-card);
+  --shadow-pop: var(--shadow-pop);
+  --shadow-dialog: var(--shadow-dialog);
+}
+
+@layer base {
+  *,
+  *::before,
+  *::after {
+    corner-shape: squircle;
+    border-color: var(--color-line);
+  }
+  .round,
+  .round::before,
+  .round::after {
+    corner-shape: round;
+  }
+  html {
+    background: var(--color-bg);
+    overscroll-behavior: none;
+    height: 100%;
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss03';
+    font-size: 14px;
+    letter-spacing: -0.006em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    height: 100%;
+    overflow: hidden;
+  }
+  #root {
+    height: 100%;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--color-accent) 55%, transparent);
+    outline-offset: 1px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  }
+  input[type='search']::-webkit-search-cancel-button {
+    appearance: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+@utility text-balance {
+  text-wrap: balance;
+}

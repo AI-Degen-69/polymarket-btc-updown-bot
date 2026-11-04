@@ -7,7 +7,10 @@ export interface RiskState {
   tradesToday: number;
   tradesTodayByInterval: Record<Interval, number>;
   consecutiveLosses: number;
+  /** Lifetime cumulative realized PnL in USD across all trades. */
   realizedPnlUsd: number;
+  /** Realized PnL in USD specifically for today (UTC day). */
+  dayRealizedPnlUsd?: number;
   dayStartEquityUsd: number;
   highWaterEquityUsd: number;
   halted: boolean;
@@ -22,6 +25,7 @@ export function freshRiskState(dayKey: string, equityUsd: number): RiskState {
     tradesTodayByInterval: { "5m": 0, "15m": 0 },
     consecutiveLosses: 0,
     realizedPnlUsd: 0,
+    dayRealizedPnlUsd: 0,
     dayStartEquityUsd: equityUsd,
     highWaterEquityUsd: equityUsd,
     halted: false,
@@ -57,7 +61,8 @@ export class RiskManager {
     this.state.dayKey = key;
     this.state.tradesToday = 0;
     this.state.tradesTodayByInterval = { "5m": 0, "15m": 0 };
-    this.state.realizedPnlUsd = 0;
+    // Daily realized PnL resets each day, but cumulative realizedPnlUsd is preserved.
+    this.state.dayRealizedPnlUsd = 0;
     this.state.dayStartEquityUsd = equityUsd;
     this.state.halted = false;
     this.state.haltReason = null;
@@ -117,6 +122,7 @@ export class RiskManager {
   /** Called with realised PnL in USD once a position is closed or settles. */
   recordClose(pnlUsd: number, nowMs: number, equityUsd: number): void {
     this.state.realizedPnlUsd += pnlUsd;
+    this.state.dayRealizedPnlUsd = (this.state.dayRealizedPnlUsd ?? 0) + pnlUsd;
     if (pnlUsd < 0) {
       this.state.consecutiveLosses += 1;
       this.state.cooldownUntilMs = nowMs + this.config.cooldownAfterLossSec * 1000;
@@ -130,6 +136,12 @@ export class RiskManager {
     }
   }
 
+  updateHighWater(equityUsd: number): void {
+    if (equityUsd > this.state.highWaterEquityUsd) {
+      this.state.highWaterEquityUsd = equityUsd;
+    }
+  }
+
   halt(reason: string): void {
     this.state.halted = true;
     this.state.haltReason = reason;
@@ -140,5 +152,29 @@ export class RiskManager {
     this.state.haltReason = null;
     this.state.consecutiveLosses = 0;
     this.state.cooldownUntilMs = 0;
+  }
+
+  /**
+   * If the bot was halted due to daily-loss or max-drawdown, checks whether
+   * newly configured limits allow it to resume.
+   */
+  recheckHalt(equityUsd: number): boolean {
+    if (!this.state.halted) return false;
+    if (this.state.haltReason?.startsWith("daily-loss-limit")) {
+      const dayLossUsd = this.state.dayStartEquityUsd - equityUsd;
+      const dayLimitUsd = (this.state.dayStartEquityUsd * this.config.dailyLossLimitPct) / 100;
+      if (dayLimitUsd <= 0 || dayLossUsd < dayLimitUsd) {
+        this.resume();
+        return true;
+      }
+    } else if (this.state.haltReason?.startsWith("max-drawdown")) {
+      const drawdownUsd = this.state.highWaterEquityUsd - equityUsd;
+      const drawdownLimitUsd = (this.state.highWaterEquityUsd * this.config.maxDrawdownPct) / 100;
+      if (drawdownLimitUsd <= 0 || drawdownUsd < drawdownLimitUsd) {
+        this.resume();
+        return true;
+      }
+    }
+    return false;
   }
 }

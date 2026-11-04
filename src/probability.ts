@@ -69,10 +69,11 @@ export function upProbability(params: {
   anchor: number;
   volatilityPerSqrtSec: number;
   secondsRemaining: number;
+  driftPerSec?: number;
 }): number {
-  const { price, anchor, volatilityPerSqrtSec, secondsRemaining } = params;
+  const { price, anchor, volatilityPerSqrtSec, secondsRemaining, driftPerSec = 0 } = params;
   if (price <= 0 || anchor <= 0) return 0.5;
-  const distance = Math.log(price / anchor);
+  const distance = Math.log(price / anchor) + driftPerSec * secondsRemaining;
   const sigma = volatilityPerSqrtSec * Math.sqrt(Math.max(secondsRemaining, 1));
   if (sigma <= 0) return distance > 0 ? 1 : 0;
   return normalCdf(distance / sigma);

@@ -38,6 +38,130 @@ function paramsFor(config: BotConfig, interval: Interval): IntervalParams {
 /** The 1-hour range filter needs at least this much sampled history to be meaningful. */
 const CHOP_FILTER_MIN_COVERAGE_MS = 15 * 60 * 1000;
 
+/** How much of the measured recovery slope the model projects: lean on momentum, never extrapolate it whole. */
+const RECOVERY_DRIFT_DAMPING = 0.42;
+
+export interface DirectionResult {
+  ok: boolean;
+  side: OutcomeSide;
+  movePct: number;
+  driftPerSec: number;
+  reason?: string;
+  detail?: Record<string, string | number | null>;
+}
+
+/**
+ * Detects post-shakeout direction and verifies it has held for the window.
+ * Supports:
+ * 1. Continuation: price sustained beyond anchor on the same side.
+ * 2. Reversal (guide edge): price dumped/pumped in early shakeout, stabilized,
+ *    and sustained a clear counter-recovery during the hold window.
+ */
+export function detectDirection(params: {
+  samples: PriceSample[];
+  anchor: Anchor;
+  price: number;
+  nowMs: number;
+  startMs: number;
+  holdSeconds: number;
+  noisePct: number;
+  requiredMovePct: number;
+  maxMovePct: number;
+  remainingSec: number;
+}): DirectionResult {
+  const { samples, anchor, price, nowMs, startMs, holdSeconds, noisePct, requiredMovePct, maxMovePct, remainingSec } =
+    params;
+  const holdMs = holdSeconds * 1000;
+  const held = samples.filter((sample) => sample.ts >= nowMs - holdMs && sample.ts <= nowMs);
+  if (held.length < 3) {
+    return {
+      ok: false,
+      side: price >= anchor.value ? "Up" : "Down",
+      movePct: (Math.abs(price - anchor.value) / anchor.value) * 100,
+      driftPerSec: 0,
+      reason: "insufficient-samples",
+    };
+  }
+
+  const tolerance = Math.max(1e-9, anchor.value * (noisePct / 100));
+  const allAboveAnchor = held.every((s) => s.value > anchor.value + tolerance);
+  const allBelowAnchor = held.every((s) => s.value < anchor.value - tolerance);
+
+  const shakeoutSamples = samples.filter((s) => s.ts >= startMs && s.ts < nowMs - holdMs);
+
+  let side: OutcomeSide = price >= anchor.value ? "Up" : "Down";
+  let movePct = (Math.abs(price - anchor.value) / anchor.value) * 100;
+  let driftPerSec = 0;
+
+  if (allAboveAnchor) {
+    let maxShakeout = 0;
+    let maxShakeoutTs = 0;
+    for (const s of shakeoutSamples) {
+      if (s.value > maxShakeout) {
+        maxShakeout = s.value;
+        maxShakeoutTs = s.ts;
+      }
+    }
+    const priorPumpPct = maxShakeout > 0 ? ((maxShakeout - anchor.value) / anchor.value) * 100 : 0;
+    const isRollingDown =
+      priorPumpPct >= requiredMovePct &&
+      held[held.length - 1]!.value < held[0]!.value - tolerance &&
+      held.every((s, i) => i === 0 || s.value <= held[0]!.value + tolerance);
+
+    if (isRollingDown) {
+      side = "Down";
+      movePct = ((maxShakeout - price) / anchor.value) * 100;
+      const holdDt = Math.max(10, (nowMs - held[0]!.ts) / 1000);
+      const velocity = Math.log(price / held[0]!.value) / holdDt;
+      driftPerSec = velocity * RECOVERY_DRIFT_DAMPING;
+    } else {
+      side = "Up";
+      movePct = ((price - anchor.value) / anchor.value) * 100;
+    }
+  } else if (allBelowAnchor) {
+    let minShakeout = Number.POSITIVE_INFINITY;
+    for (const s of shakeoutSamples) {
+      if (s.value < minShakeout) {
+        minShakeout = s.value;
+      }
+    }
+    const priorDumpPct = Number.isFinite(minShakeout) ? ((anchor.value - minShakeout) / anchor.value) * 100 : 0;
+    const isRecoveringUp =
+      priorDumpPct >= requiredMovePct &&
+      held[held.length - 1]!.value > held[0]!.value + tolerance &&
+      held.every((s, i) => i === 0 || s.value >= held[0]!.value - tolerance);
+
+    if (isRecoveringUp) {
+      side = "Up";
+      movePct = ((price - minShakeout) / anchor.value) * 100;
+      const holdDt = Math.max(10, (nowMs - held[0]!.ts) / 1000);
+      const velocity = Math.log(price / held[0]!.value) / holdDt;
+      driftPerSec = velocity * RECOVERY_DRIFT_DAMPING;
+    } else {
+      side = "Down";
+      movePct = ((anchor.value - price) / anchor.value) * 100;
+    }
+  } else {
+    return {
+      ok: false,
+      side,
+      movePct,
+      driftPerSec: 0,
+      reason: "direction-not-held",
+      detail: { samples: held.length },
+    };
+  }
+
+  // Bound projected drift to chase ceiling
+  if (driftPerSec !== 0 && remainingSec > 0) {
+    const maxDrift = maxMovePct / 100;
+    const projected = Math.max(-maxDrift, Math.min(maxDrift, driftPerSec * remainingSec));
+    driftPerSec = projected / remainingSec;
+  }
+
+  return { ok: true, side, movePct, driftPerSec };
+}
+
 /** Chapter 2 of the guide, in code: observation, held direction, mispricing. */
 export function evaluateEntry(ctx: EntryContext): EntryDecision {
   const { market, anchor, price, config } = ctx;
@@ -76,27 +200,53 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
     return { action: "skip", reason: "low-volatility-grind", detail: { hourlyRangePct: round(hourly) } };
   }
 
-  const side: OutcomeSide = price >= anchor.value ? "Up" : "Down";
-
-  // Rule 2a: the post-shakeout direction has to hold for the whole window.
-  const holdMs = params.minDirectionHoldSeconds * 1000;
-  const held = ctx.samples.filter((sample) => sample.ts >= ctx.nowMs - holdMs);
-  if (held.length < 3) return { action: "skip", reason: "insufficient-samples" };
-
-  const tolerance = Math.max(1e-9, anchor.value * (config.entry.noisePct / 100));
-  for (const sample of held) {
-    const stillUp = sample.value > anchor.value + tolerance;
-    const stillDown = sample.value < anchor.value - tolerance;
-    if (side === "Up" ? !stillUp : !stillDown) {
-      return { action: "skip", reason: "direction-not-held", detail: { samples: held.length } };
+  // Tight chop filter (guide rule 3): if price oscillates in a tight $50 corridor
+  // with no trend across the observation period, false signals dominate.
+  // Gated by enoughHistory so a freshly started bot doesn't skip immediately.
+  if (enoughHistory) {
+    const obsCutoff = Math.max(market.startMs, ctx.nowMs - params.observationSeconds * 1000);
+    const obsSamples = ctx.samples.filter((s) => s.ts >= obsCutoff && s.ts <= ctx.nowMs);
+    if (obsSamples.length >= 3) {
+      let minPrice = Number.POSITIVE_INFINITY;
+      let maxPrice = 0;
+      for (const s of obsSamples) {
+        if (s.value < minPrice) minPrice = s.value;
+        if (s.value > maxPrice) maxPrice = s.value;
+      }
+      const obsRangeUsd = maxPrice - minPrice;
+      if (obsRangeUsd < config.entry.tightChopRangeUsd) {
+        return {
+          action: "skip",
+          reason: "tight-chop-no-trend",
+          detail: { obsRangeUsd: round(obsRangeUsd), minRangeUsd: config.entry.tightChopRangeUsd },
+        };
+      }
     }
   }
 
-  const movePct = (Math.abs(price - anchor.value) / anchor.value) * 100;
-  // A recovered or published anchor is less precise than our own live sample,
-  // so demand more move before calling the direction real.
   const requiredMove =
     config.entry.minMovePct + (anchor.source === "live" ? 0 : config.entry.nonLiveAnchorExtraMovePct);
+
+  // Rule 2a: detect post-shakeout direction (continuation or reversal) and ensure it held for the window.
+  const dir = detectDirection({
+    samples: ctx.samples,
+    anchor,
+    price,
+    nowMs: ctx.nowMs,
+    startMs: market.startMs,
+    holdSeconds: params.minDirectionHoldSeconds,
+    noisePct: config.entry.noisePct,
+    requiredMovePct: requiredMove,
+    maxMovePct: config.entry.maxMovePct,
+    remainingSec,
+  });
+
+  if (!dir.ok) {
+    return { action: "skip", reason: dir.reason ?? "direction-not-held", detail: dir.detail };
+  }
+
+  const { side, movePct, driftPerSec } = dir;
+
   if (movePct < requiredMove) {
     return { action: "skip", reason: "move-too-small", detail: { movePct: round(movePct), needsPct: requiredMove } };
   }
@@ -124,6 +274,7 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
     anchor: anchor.value,
     volatilityPerSqrtSec: ctx.volatilityPerSqrtSec,
     secondsRemaining: remainingSec,
+    driftPerSec,
   });
   const modelProb = side === "Up" ? pUp : 1 - pUp;
 
@@ -179,45 +330,62 @@ export interface ExitContext {
 }
 
 export type ExitDecision =
-  | { action: "sell"; reason: string; minPrice: number; stallSinceMs: number | null }
-  | { action: "hold"; reason: string; stallSinceMs: number | null };
+  | { action: "sell"; reason: string; minPrice: number; stallSinceMs: number | null; stallLeftBandSinceMs?: number | null }
+  | { action: "hold"; reason: string; stallSinceMs: number | null; stallLeftBandSinceMs?: number | null };
 
 /**
  * The guide's mechanical exit table: lock profit at 85-90c, sell if odds stall
  * at 60-70c for 3+ minutes, hold small reversals, hold at <=20c and take the
  * loss at resolution, and leave immediately on news.
+ *
+ * Includes a grace window (default 15s) so single-tick CLOB bid flickers
+ * outside 60-70c do not instantly wipe the stall counter.
  */
 export function evaluateExit(ctx: ExitContext): ExitDecision {
   const { position, bid, config } = ctx;
   const params = paramsFor(config, position.interval);
   let stallSinceMs = position.stallSinceMs;
+  let stallLeftBandSinceMs = position.stallLeftBandSinceMs ?? null;
 
   if (ctx.newsBlocked) {
-    return { action: "sell", reason: "news-invalidated-thesis", minPrice: bid ?? 0.01, stallSinceMs };
+    return { action: "sell", reason: "news-invalidated-thesis", minPrice: bid ?? 0.01, stallSinceMs, stallLeftBandSinceMs };
   }
-  if (bid === null) return { action: "hold", reason: "no-bid", stallSinceMs };
+  if (bid === null) return { action: "hold", reason: "no-bid", stallSinceMs, stallLeftBandSinceMs };
 
   if (bid >= config.exit.profitTargetCents) {
-    return { action: "sell", reason: "profit-target-hit", minPrice: round4(bid), stallSinceMs };
+    return { action: "sell", reason: "profit-target-hit", minPrice: round4(bid), stallSinceMs, stallLeftBandSinceMs };
   }
 
   if (bid <= config.exit.acceptLossBelowCents) {
     // Selling here would lock the loss; the guide holds for resolution.
-    return { action: "hold", reason: "accept-loss-at-resolution", stallSinceMs };
+    return { action: "hold", reason: "accept-loss-at-resolution", stallSinceMs, stallLeftBandSinceMs };
   }
 
   const inStallBand = bid >= config.exit.stallBandLow && bid <= config.exit.stallBandHigh;
   if (!inStallBand) {
+    if (stallSinceMs !== null) {
+      // We were previously stalling. Apply grace period before wiping stallSinceMs.
+      stallLeftBandSinceMs = stallLeftBandSinceMs ?? ctx.nowMs;
+      const graceMs = (config.exit.stallGraceSeconds ?? 15) * 1000;
+      if (ctx.nowMs - stallLeftBandSinceMs < graceMs) {
+        // Within grace window: keep stallSinceMs active
+        return { action: "hold", reason: "stalled-but-waiting", stallSinceMs, stallLeftBandSinceMs };
+      }
+    }
+    // Grace expired or never stalled
     stallSinceMs = null;
-    return { action: "hold", reason: "thesis-intact", stallSinceMs };
+    stallLeftBandSinceMs = null;
+    return { action: "hold", reason: "thesis-intact", stallSinceMs, stallLeftBandSinceMs };
   }
 
+  // Inside stall band: clear any left-band timestamp
+  stallLeftBandSinceMs = null;
   stallSinceMs = stallSinceMs ?? ctx.nowMs;
   const stalledMs = ctx.nowMs - stallSinceMs;
   if (stalledMs >= params.stallSeconds * 1000) {
-    return { action: "sell", reason: "odds-stalled", minPrice: round4(bid), stallSinceMs };
+    return { action: "sell", reason: "odds-stalled", minPrice: round4(bid), stallSinceMs, stallLeftBandSinceMs };
   }
-  return { action: "hold", reason: "stalled-but-waiting", stallSinceMs };
+  return { action: "hold", reason: "stalled-but-waiting", stallSinceMs, stallLeftBandSinceMs };
 }
 
 export function secondsLeft(market: MarketRef, nowMs: number): number {
@@ -249,10 +417,9 @@ export function inspectMarket(ctx: EntryContext): MarketMetrics {
   const requiredMovePct =
     config.entry.minMovePct + (anchor && anchor.source !== "live" ? config.entry.nonLiveAnchorExtraMovePct : 0);
 
-  const side: OutcomeSide | null = anchor && price !== null ? (price >= anchor.value ? "Up" : "Down") : null;
-  const movePct = anchor && price !== null ? (Math.abs(price - anchor.value) / anchor.value) * 100 : null;
-
-  if (!side || !anchor || price === null || !ctx.volatilityPerSqrtSec) {
+  if (!anchor || price === null || !ctx.volatilityPerSqrtSec) {
+    const side = anchor && price !== null ? (price >= anchor.value ? "Up" : "Down") : null;
+    const movePct = anchor && price !== null ? (Math.abs(price - anchor.value) / anchor.value) * 100 : null;
     return {
       side,
       movePct,
@@ -264,6 +431,21 @@ export function inspectMarket(ctx: EntryContext): MarketMetrics {
     };
   }
 
+  const dir = detectDirection({
+    samples: ctx.samples,
+    anchor,
+    price,
+    nowMs: ctx.nowMs,
+    startMs: market.startMs,
+    holdSeconds: config.intervalParams[market.interval].minDirectionHoldSeconds,
+    noisePct: config.entry.noisePct,
+    requiredMovePct,
+    maxMovePct: config.entry.maxMovePct,
+    remainingSec: secondsRemaining,
+  });
+
+  const side = dir.side;
+  const movePct = dir.movePct;
   const quote = market.quotes[side];
   const spreadCents =
     quote.ask !== null && quote.bid !== null ? Number(((quote.ask - quote.bid) * 100).toFixed(4)) : null;
@@ -272,6 +454,7 @@ export function inspectMarket(ctx: EntryContext): MarketMetrics {
     anchor: anchor.value,
     volatilityPerSqrtSec: ctx.volatilityPerSqrtSec,
     secondsRemaining,
+    driftPerSec: dir.driftPerSec,
   });
   const modelProb = side === "Up" ? pUp : 1 - pUp;
   const edge = quote.ask === null ? null : modelProb - quote.ask - takerFeePerShare(quote.ask, config.entry.feeRate);

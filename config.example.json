@@ -25,9 +25,21 @@
     "minMovePct": 0.05,
     "maxMovePct": 0.5,
     "minHourlyRangePct": 0.3,
+    "tightChopRangeUsd": 50,
     "maxSpreadCents": 2,
+    "noisePct": 0.01,
+    "nonLiveAnchorExtraMovePct": 0.05,
     "kellyCut": 0.25,
-    "maxPositionPct": 0.08
+    "maxPositionPct": 0.08,
+    "minPositionUsd": 5,
+    "feeRate": 0.07
+  },
+  "exit": {
+    "profitTargetCents": 0.85,
+    "stallBandLow": 0.6,
+    "stallBandHigh": 0.7,
+    "acceptLossBelowCents": 0.2,
+    "stallGraceSeconds": 15
   },
   "risk": {
     "maxConcurrentPositions": 1,
