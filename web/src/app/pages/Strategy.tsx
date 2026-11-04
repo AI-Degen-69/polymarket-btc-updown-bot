@@ -1,23 +1,18 @@
 import {
   AlertTriangle,
-  ArrowRight,
   BookOpen,
   CheckCircle2,
   Clock,
   Coins,
   Gauge,
-  HelpCircle,
   Percent,
-  Scale,
   ShieldAlert,
-  ShieldCheck,
   SlidersHorizontal,
   Target,
-  TrendingDown,
   TrendingUp,
   Zap,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import { Link } from 'react-router'
 
 import { Badge, Card, PageHeader } from '../components/ui'
@@ -66,7 +61,7 @@ const ENTRY_GATES = [
     subtitle: 'Mispricing Model',
     icon: Percent,
     body: 'True probability is calculated via log-normal Brownian motion with momentum drift. You only buy when our probability exceeds the CLOB ask plus taker fees by at least 6¢.',
-    setting: 'minEdge: 0.06 · minProb: 0.52 · maxProb: 0.72',
+    setting: 'minEdge: 0.06 · minModelProb: 0.52 · maxModelProb: 0.72',
     keyMetric: 'Edge ≥ 0.06',
     metricLabel: 'Statistical surplus',
     tone: 'success' as const,
@@ -88,7 +83,7 @@ const ENTRY_GATES = [
     subtitle: 'Regime Safety Guard',
     icon: ShieldAlert,
     body: 'Sit out if 1-hour range is under 0.3% or the 5-minute observation corridor is under $50. Full ±15 minute blackout around high-impact economic news (FOMC, CPI, Fed).',
-    setting: 'minHourlyRange: 0.3% · tightChop: $50 · blackout: 15m',
+    setting: 'minHourlyRangePct: 0.3% · tightChopRangeUsd: $50 · news.blackoutMinutes: 15',
     keyMetric: 'Corridor ≥ $50',
     metricLabel: 'Volatile regime only',
     tone: 'danger' as const,
@@ -107,7 +102,7 @@ const EXIT_SCENARIOS = [
   },
   {
     id: 'stalled',
-    condition: 'Odds stall at 60¢ – 70¢ for 3+ minutes',
+    condition: 'Odds stall at 60¢ – 70¢ (180s on 15m; 60s on 5m)',
     action: 'Sell & exit stalled trade',
     tone: 'warning' as const,
     badge: 'Momentum Faded',
@@ -147,8 +142,32 @@ const EXIT_SCENARIOS = [
 // MAIN COMPONENT
 // ----------------------------------------------------------------------
 
+const TAB_LIST = [
+  { id: 'visual', label: '1. Window Timeline & Real Trade Walkthrough' },
+  { id: 'math', label: '2. Mathematical Formulation & Edge Model' },
+  { id: 'exits', label: '3. Mechanical Exit Matrix & Scenarios' },
+  { id: 'risk', label: '4. Capital Sizing & Risk Discipline' },
+] as const
+type TabId = (typeof TAB_LIST)[number]['id']
+
 export function Strategy() {
-  const [activeTab, setActiveTab] = useState<'visual' | 'math' | 'exits' | 'risk'>('visual')
+  const [activeTab, setActiveTab] = useState<TabId>('visual')
+
+  const onTabListKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End']
+    if (!keys.includes(event.key)) return
+    event.preventDefault()
+    const ids = TAB_LIST.map((tab) => tab.id)
+    const index = ids.indexOf(activeTab)
+    const next =
+      event.key === 'Home'
+        ? ids[0]!
+        : event.key === 'End'
+          ? ids[ids.length - 1]!
+          : ids[(index + (event.key === 'ArrowRight' ? 1 : -1) + ids.length) % ids.length]!
+    setActiveTab(next)
+    document.getElementById(`strategy-tab-${next}`)?.focus()
+  }
 
   return (
     <div className="mx-auto max-w-[1080px] p-5 sm:p-8">
@@ -178,7 +197,7 @@ export function Strategy() {
           markets settling against Chainlink BTC/USD. Most participants enter within the first 60 seconds on adrenaline,
           getting trapped in false breakouts. This strategy does the reverse: it waits{' '}
           <strong className="text-fg font-semibold">5 full minutes</strong> to observe shakeout exhaustion, confirms a{' '}
-          <strong className="text-fg font-semibold">60-second momentum direction</strong>, and enters only when odds lag
+          <strong className="text-fg font-semibold">momentum direction (60s on 15m · 20s on 5m)</strong>, and enters only when odds lag
           the real probability.
         </p>
 
@@ -210,17 +229,22 @@ export function Strategy() {
       </Card>
 
       {/* Visual Navigation Tabs */}
-      <div className="mt-8 flex flex-wrap gap-2 border-b border-line pb-3">
-        {[
-          { id: 'visual', label: '1. Window Timeline & Real Trade Walkthrough' },
-          { id: 'math', label: '2. Mathematical Formulation & Edge Model' },
-          { id: 'exits', label: '3. Mechanical Exit Matrix & Scenarios' },
-          { id: 'risk', label: '4. Capital Sizing & Risk Discipline' },
-        ].map((tab) => (
+      <div
+        role="tablist"
+        aria-label="Strategy sections"
+        onKeyDown={onTabListKeyDown}
+        className="mt-8 flex flex-wrap gap-2 border-b border-line pb-3"
+      >
+        {TAB_LIST.map((tab) => (
           <button
             key={tab.id}
+            id={`strategy-tab-${tab.id}`}
             type="button"
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            role="tab"
+            aria-selected={activeTab === tab.id}
+            aria-controls={`strategy-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => setActiveTab(tab.id)}
             className={`cursor-pointer rounded-tile px-3.5 py-1.5 text-[13px] font-medium transition-all ${
               activeTab === tab.id
                 ? 'bg-fg text-surface shadow-sm'
@@ -234,7 +258,7 @@ export function Strategy() {
 
       {/* TAB 1: VISUAL TIMELINE & WALKTHROUGH */}
       {activeTab === 'visual' && (
-        <div className="mt-6 space-y-6">
+        <div id="strategy-panel-visual" role="tabpanel" aria-labelledby="strategy-tab-visual" className="mt-6 space-y-6">
           {/* Section: Window Timeline Diagram */}
           <Card className="p-6">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -312,7 +336,7 @@ export function Strategy() {
 
             {/* SVG Visual Graph */}
             <div className="mt-6 overflow-hidden rounded-tile border border-line bg-surface-2/40 p-4">
-              <svg viewBox="0 0 800 320" className="h-auto w-full font-sans" preserveAspectRatio="xMidYMid meet">
+              <svg viewBox="0 0 800 320" role="img" aria-label="15-minute window timeline showing the shakeout, active entry zone, and exit phase" className="h-auto w-full font-sans" preserveAspectRatio="xMidYMid meet">
                 {/* Background Grid */}
                 <line x1="60" y1="50" x2="760" y2="50" stroke="var(--color-line)" strokeDasharray="3 3" />
                 <line x1="60" y1="130" x2="760" y2="130" stroke="var(--color-line)" strokeDasharray="3 3" />
@@ -406,8 +430,8 @@ export function Strategy() {
                   <Card key={gate.title} className="p-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
-                        <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-surface-2 text-[12px] font-bold text-muted">
-                          {gate.step}
+                        <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-surface-2 text-muted">
+                          <IconComponent className="size-4" aria-hidden="true" />
                         </span>
                         <div>
                           <h4 className="text-[14px] font-semibold text-fg">{gate.title}</h4>
@@ -433,7 +457,7 @@ export function Strategy() {
 
       {/* TAB 2: MATHEMATICAL FORMULATIONS */}
       {activeTab === 'math' && (
-        <div className="mt-6 space-y-6">
+        <div id="strategy-panel-math" role="tabpanel" aria-labelledby="strategy-tab-math" className="mt-6 space-y-6">
           <Card className="p-6">
             <h3 className="text-[16px] font-semibold text-fg">Mathematical Models & Pricing Formulations</h3>
             <p className="text-[13px] text-muted">
@@ -587,7 +611,7 @@ export function Strategy() {
 
       {/* TAB 3: EXIT MATRIX */}
       {activeTab === 'exits' && (
-        <div className="mt-6 space-y-6">
+        <div id="strategy-panel-exits" role="tabpanel" aria-labelledby="strategy-tab-exits" className="mt-6 space-y-6">
           <Card className="p-6">
             <h3 className="text-[16px] font-semibold text-fg">The Mechanical Exit Matrix</h3>
             <p className="text-[13px] text-muted">
@@ -636,7 +660,7 @@ export function Strategy() {
 
       {/* TAB 4: RISK & SIZING */}
       {activeTab === 'risk' && (
-        <div className="mt-6 space-y-6">
+        <div id="strategy-panel-risk" role="tabpanel" aria-labelledby="strategy-tab-risk" className="mt-6 space-y-6">
           <Card className="p-6">
             <h3 className="text-[16px] font-semibold text-fg">Capital Preservation & Risk Discipline</h3>
             <p className="text-[13px] text-muted">
