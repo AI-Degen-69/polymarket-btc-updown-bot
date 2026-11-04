@@ -87,7 +87,7 @@ function readPath(source: unknown, path: string): number {
 }
 
 function flatten(config: BotConfigView): Draft {
-  const draft: Draft = {}
+  const draft: Draft = { 'news.blackoutMinutes': config.news.blackoutMinutes }
   for (const group of GROUPS) for (const field of group.fields) draft[field.path] = readPath(config, field.path)
   return draft
 }
@@ -236,6 +236,7 @@ export function Config() {
                 </Field>
               </div>
               <textarea
+                aria-label="Scheduled news events, one ISO timestamp per line"
                 value={newsText}
                 onChange={(event) => setEvents(event.target.value)}
                 rows={5}

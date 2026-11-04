@@ -38,6 +38,9 @@ function paramsFor(config: BotConfig, interval: Interval): IntervalParams {
 /** The 1-hour range filter needs at least this much sampled history to be meaningful. */
 const CHOP_FILTER_MIN_COVERAGE_MS = 15 * 60 * 1000;
 
+/** How much of the measured recovery slope the model projects: lean on momentum, never extrapolate it whole. */
+const RECOVERY_DRIFT_DAMPING = 0.42;
+
 export interface DirectionResult {
   ok: boolean;
   side: OutcomeSide;
@@ -110,7 +113,7 @@ export function detectDirection(params: {
       movePct = ((maxShakeout - price) / anchor.value) * 100;
       const holdDt = Math.max(10, (nowMs - held[0]!.ts) / 1000);
       const velocity = Math.log(price / held[0]!.value) / holdDt;
-      driftPerSec = velocity * 0.42;
+      driftPerSec = velocity * RECOVERY_DRIFT_DAMPING;
     } else {
       side = "Up";
       movePct = ((price - anchor.value) / anchor.value) * 100;
@@ -133,7 +136,7 @@ export function detectDirection(params: {
       movePct = ((price - minShakeout) / anchor.value) * 100;
       const holdDt = Math.max(10, (nowMs - held[0]!.ts) / 1000);
       const velocity = Math.log(price / held[0]!.value) / holdDt;
-      driftPerSec = velocity * 0.42;
+      driftPerSec = velocity * RECOVERY_DRIFT_DAMPING;
     } else {
       side = "Down";
       movePct = ((anchor.value - price) / anchor.value) * 100;

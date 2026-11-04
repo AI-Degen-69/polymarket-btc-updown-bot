@@ -415,7 +415,7 @@ function RiskPanel({ data }: { data: BotSnapshot }) {
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-tile bg-danger-soft p-2.5 text-[12.5px] text-danger">
           <span>Halted for the day: {label(risk.haltReason)}</span>
           <Button
-            size="xs"
+            size="sm"
             variant="secondary"
             loading={resume.isPending}
             onClick={() =>

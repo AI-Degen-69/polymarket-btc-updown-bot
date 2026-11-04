@@ -53,7 +53,7 @@ export class Engine {
 
     const bankroll = this.config.bankrollUsd;
     this.state = this.store
-      ? this.store.load(bankroll)
+      ? this.store.load(bankroll, this.config.risk.dailyLossLimitPct)
       : {
           version: 1,
           bankrollUsd: bankroll,
@@ -157,7 +157,7 @@ export class Engine {
     } catch {
       // best effort: the next tick will try again
     }
-    this.state = this.store.load(this.config.bankrollUsd);
+    this.state = this.store.load(this.config.bankrollUsd, this.config.risk.dailyLossLimitPct);
     this.risk = new RiskManager(this.state.risk, this.config.risk);
     this.verdicts.clear();
     this.lastSignature.clear();

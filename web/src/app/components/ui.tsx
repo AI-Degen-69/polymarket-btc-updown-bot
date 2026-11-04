@@ -45,7 +45,7 @@ export function Button({
   ...rest
 }: ComponentPropsWithoutRef<'button'> & { variant?: ButtonVariant; size?: ButtonSize; loading?: boolean }) {
   return (
-    <button type="button" className={cx(buttonBase, buttonVariants[variant], buttonSizes[size], className)} disabled={loading || rest.disabled} {...rest}>
+    <button type="button" className={cx(buttonBase, buttonVariants[variant], buttonSizes[size], className)} {...rest} disabled={loading || rest.disabled}>
       {loading ? <Loader2 className="animate-spin" /> : children}
     </button>
   )
@@ -449,7 +449,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex flex-col items-center gap-2">
+      <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex flex-col items-center gap-2">
         <AnimatePresence>
           {toasts.map((t) => (
             <motion.div

@@ -11,7 +11,7 @@ const ENTRY_GATES: { title: string; body: string; setting: string }[] = [
   },
   {
     title: 'The direction has to hold',
-    body: 'After the observation window, the price must stay on one side of the window-open reference for at least 60 seconds (20s on 5m). One wick back through the anchor resets it.',
+    body: 'After the observation window, the direction must hold for at least 60 seconds (20s on 5m), outside the noise band. Direction follows the tape, not the anchor: a dump that stabilises and grinds back up is an Up trade even below the window open. Flapping across the anchor fails the gate.',
     setting: 'minDirectionHoldSeconds',
   },
   {
@@ -154,7 +154,7 @@ export function Strategy() {
         <Card className="mt-3 divide-y divide-line">
           {[
             ['Reference price', 'Captured from the bot’s own feed at the window open, so distance, direction and volatility come from one source. Mid-window starts recover the open from 1-minute candles and demand an extra 0.05% of move.'],
-            ['Probability model', 'Driftless Brownian motion: p = Φ(ln(price/anchor) / (σ√τ)), with σ from realised variance. The crypto taker fee of 0.07 · p · (1 − p) is subtracted from edge.'],
+            ['Probability model', 'Log-normal with post-shakeout drift: p = Φ((ln(price/anchor) + μ·τ) / (σ√τ)), with σ from realised variance and μ the damped recovery velocity. Without momentum μ is zero, so it reduces to driftless Brownian motion. The crypto taker fee of 0.07 · p · (1 − p) is subtracted from edge.'],
             ['Order placement', 'Marketable FAK orders through the official SDK, bounded by a maximum price. Nothing rests on the book, so there is nothing to cancel when the thesis changes.'],
             ['Window discovery', 'Slug-addressed windows (btc-updown-5m-<unix>, btc-updown-15m-<unix>) read straight from Gamma; books come from the CLOB. No scraping, no hardcoded IDs.'],
             ['What it will not do', 'Martingale, trade through scheduled news it was not told about, size off a losing streak, or place a live order unless started with --live.'],

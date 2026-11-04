@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, appendFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Anchor, Position, TradeRecord } from "./types.ts";
+import { DEFAULT_CONFIG } from "./config.ts";
 import { freshRiskState, utcDayKey, type RiskState } from "./risk.ts";
 
 export interface PersistedState {
@@ -61,7 +62,7 @@ export class Store {
     }
   }
 
-  load(bankrollUsd: number): PersistedState {
+  load(bankrollUsd: number, dailyLossLimitPct: number = DEFAULT_CONFIG.risk.dailyLossLimitPct): PersistedState {
     this.ensure();
     if (!existsSync(this.statePath)) {
       const state: PersistedState = {
@@ -96,10 +97,10 @@ export class Store {
       if (parsed.highWaterBankrollUsd < currentEquity) {
         parsed.highWaterBankrollUsd = currentEquity;
       }
-      // If halted due to daily-loss-limit but actual day loss does not breach the limit, heal halt status
+      // If halted due to daily-loss-limit but actual day loss does not breach the configured limit, heal halt status
       if (parsed.risk.halted && parsed.risk.haltReason?.startsWith("daily-loss-limit")) {
         const dayLoss = parsed.risk.dayStartEquityUsd - currentEquity;
-        const dayLimit = (parsed.risk.dayStartEquityUsd * 3) / 100;
+        const dayLimit = (parsed.risk.dayStartEquityUsd * dailyLossLimitPct) / 100;
         if (dayLoss < dayLimit) {
           parsed.risk.halted = false;
           parsed.risk.haltReason = null;
