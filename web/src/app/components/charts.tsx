@@ -82,7 +82,7 @@ export function AreaChart({ data, height = 220, className }: { data: { label: st
       </svg>
       {hover !== null && points[hover] && data[hover] && (
         <div
-          className="pointer-events-none absolute -top-1 -translate-x-1/2 rounded-tile bg-fg px-2.5 py-1.5 text-[12px] font-medium text-white shadow-pop"
+          className="pointer-events-none absolute -top-1 -translate-x-1/2 rounded-tile bg-fg px-2.5 py-1.5 text-[12px] font-medium text-surface shadow-pop"
           style={{ left: `${(points[hover].x / w) * 100}%` }}
         >
           {moneyCompact(data[hover].value)}

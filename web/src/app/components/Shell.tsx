@@ -106,9 +106,9 @@ export function Shell() {
         </button>
       </div>
       {mobileOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setMobileOpen(false)}>
-          <div className="absolute inset-0 bg-fg/20" />
-          <aside className="absolute inset-y-0 left-0 w-[280px] bg-bg shadow-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-40 lg:hidden">
+          <button type="button" aria-label="Close menu" className="absolute inset-0 cursor-pointer bg-fg/20" onClick={() => setMobileOpen(false)} />
+          <aside className="absolute inset-y-0 left-0 w-[280px] bg-bg shadow-dialog">
             <button type="button" aria-label="Close menu" onClick={() => setMobileOpen(false)} className="absolute right-3 top-3 grid size-9 place-items-center rounded-control">
               <X className="size-5" />
             </button>

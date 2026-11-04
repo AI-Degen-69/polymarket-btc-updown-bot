@@ -107,6 +107,7 @@
     background: var(--color-bg);
     overscroll-behavior: none;
     height: 100%;
+    scroll-behavior: smooth;
   }
   body {
     background: var(--color-bg);
@@ -122,6 +123,12 @@
   }
   #root {
     height: 100%;
+  }
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
   }
   button,
   input,
