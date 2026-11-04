@@ -23,7 +23,7 @@ type ButtonSize = 'md' | 'sm' | 'icon' | 'icon-sm'
 
 // No disabled:pointer-events-none — it would defeat the not-allowed cursor and the title tooltip on disabled buttons.
 const buttonBase =
-  'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:opacity-50 disabled:hover:bg-transparent [&_svg]:size-4 [&_svg]:shrink-0'
+  'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0'
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: 'bg-fg text-surface shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-fg/85',
   secondary: 'border border-line-strong bg-surface text-fg shadow-[0_1px_1px_rgb(20_20_24/0.04)] hover:bg-surface-2',

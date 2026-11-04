@@ -213,18 +213,20 @@ export function Strategy() {
       const el = document.getElementById(id)
       if (el) observer.observe(el)
     }
-    // The last section sits below the observation band even when scrolled into
-    // view, so activate it once the page reaches the bottom.
+    // The page content sits inside Shell's scrolling container (overflow-y-auto),
+    // not the window. Use that container for the end-of-page check.
+    const container = document.querySelector<HTMLElement>('.scrollbar-thin.overflow-y-auto')
     const onScroll = () => {
+      if (!container) return
       const last = TOC_IDS[TOC_IDS.length - 1]
-      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4) {
         setActiveId(last)
       }
     }
-    window.addEventListener('scroll', onScroll, { passive: true })
+    container?.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       observer.disconnect()
-      window.removeEventListener('scroll', onScroll)
+      container?.removeEventListener('scroll', onScroll)
     }
   }, [])
 
