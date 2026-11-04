@@ -480,6 +480,21 @@ describe("reset", () => {
     expect(loaded.risk.halted).toBe(false);
     expect(loaded.risk.haltReason).toBeNull();
   });
+
+  test("keeps a daily-loss halt that is valid under a tighter configured limit", () => {
+    const dir = mkdtempSync(join(tmpdir(), "bot-heal-"));
+    const store = new Store(dir);
+    const initial = store.load(1_000);
+    initial.risk.realizedPnlUsd = -20;
+    initial.risk.dayStartEquityUsd = 1_000;
+    initial.risk.halted = true;
+    initial.risk.haltReason = "daily-loss-limit:10.00";
+    store.save(initial);
+
+    // 2% down on the day: a genuine halt under a 1% limit, a stale one under the 3% default.
+    expect(store.load(1_000, 1).risk.halted).toBe(true);
+    expect(store.load(1_000, 3).risk.halted).toBe(false);
+  });
 });
 
 describe("news blackout", () => {
