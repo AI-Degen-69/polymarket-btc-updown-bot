@@ -21,8 +21,9 @@ import { initials } from '../lib/format'
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 type ButtonSize = 'md' | 'sm' | 'icon' | 'icon-sm'
 
+// No disabled:pointer-events-none — it would defeat the not-allowed cursor and the title tooltip on disabled buttons.
 const buttonBase =
-  'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0'
+  'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:opacity-50 disabled:hover:bg-transparent [&_svg]:size-4 [&_svg]:shrink-0'
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: 'bg-fg text-surface shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-fg/85',
   secondary: 'border border-line-strong bg-surface text-fg shadow-[0_1px_1px_rgb(20_20_24/0.04)] hover:bg-surface-2',
@@ -54,10 +55,8 @@ export function Button({
 export const inputClass =
   'h-9 w-full min-w-0 rounded-control border border-line-strong bg-surface px-3 text-[13.5px] text-fg placeholder:text-faint transition-[border-color,box-shadow] focus:border-accent focus:outline-none focus:ring-[3px] focus:ring-accent/15 disabled:opacity-60'
 // Same control with a danger outline, for out-of-range values.
-export const invalidInputClass = inputClass
-  .replace('border-line-strong', 'border-danger')
-  .replace('focus:border-accent', 'focus:border-danger')
-  .replace('focus:ring-accent/15', 'focus:ring-danger/15')
+export const invalidInputClass =
+  'h-9 w-full min-w-0 rounded-control border border-danger bg-surface px-3 text-[13.5px] text-fg placeholder:text-faint transition-[border-color,box-shadow] focus:border-danger focus:outline-none focus:ring-[3px] focus:ring-danger/15 disabled:opacity-60'
 
 export function Input({ className, id, invalid, ...rest }: ComponentPropsWithoutRef<'input'> & { invalid?: boolean }) {
   const fieldId = useFieldId()

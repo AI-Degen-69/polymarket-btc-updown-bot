@@ -1,11 +1,6 @@
 import type { Interval } from "./types.ts";
 
 /**
- * Single source of truth for factory defaults. Imported by the bot (config
- * loading) and by the dashboard web app (per-field reset buttons) — keep this
- * module dependency-free so the web bundle can import it directly.
- */
-/**
  * Every field the dashboard may change, with hard bounds. A typo in a form must
  * never be able to disable a risk limit, so values are clamped, not trusted.
  * Shared with the web UI, which uses the same table to validate before save.
@@ -48,6 +43,11 @@ export const EDITABLE: Record<string, [number, number]> = {
   "intervalParams.5m.stallSeconds": [5, 280],
 };
 
+/**
+ * Single source of truth for factory defaults. Imported by the bot (config
+ * loading) and by the dashboard web app (per-field reset buttons) — keep this
+ * module dependency-free so the web bundle can import it directly.
+ */
 export const DEFAULT_CONFIG = {
   asset: "btc",
   intervals: ["15m", "5m"] as Interval[],
