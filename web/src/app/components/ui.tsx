@@ -107,10 +107,6 @@ export function Field({ label, children, hint, tip, error, className }: { label:
             <span
               tabIndex={0}
               aria-label={`About: ${label}`}
-<<<<<<< HEAD
-              aria-describedby={tipId}
-=======
->>>>>>> f44c89b
               className="cursor-help rounded-full text-faint transition-colors hover:text-fg focus-visible:text-fg"
             >
               <Info className="size-3.5" aria-hidden="true" />
