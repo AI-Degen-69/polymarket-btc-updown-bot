@@ -38,14 +38,18 @@ function paramsFor(config: BotConfig, interval: Interval): IntervalParams {
 /** The 1-hour range filter needs at least this much sampled history to be meaningful. */
 const CHOP_FILTER_MIN_COVERAGE_MS = 15 * 60 * 1000;
 
-/** How much of the measured recovery slope the model projects: lean on momentum, never extrapolate it whole. */
-const RECOVERY_DRIFT_DAMPING = 0.42;
+/**
+ * An edge this large is a model defect, not a mispricing. Live evidence: the
+ * drift term priced 8c contracts at 61%, an "edge" of 53c. Real edges top out
+ * near 15c. Reject instead of sizing up.
+ */
+const MAX_PLAUSIBLE_EDGE = 0.3;
 
 export interface DirectionResult {
   ok: boolean;
   side: OutcomeSide;
+  /** Signed distance to the win condition: negative means still the wrong side of the anchor. */
   movePct: number;
-  driftPerSec: number;
   reason?: string;
   detail?: Record<string, string | number | null>;
 }
@@ -66,11 +70,8 @@ export function detectDirection(params: {
   holdSeconds: number;
   noisePct: number;
   requiredMovePct: number;
-  maxMovePct: number;
-  remainingSec: number;
 }): DirectionResult {
-  const { samples, anchor, price, nowMs, startMs, holdSeconds, noisePct, requiredMovePct, maxMovePct, remainingSec } =
-    params;
+  const { samples, anchor, price, nowMs, startMs, holdSeconds, noisePct, requiredMovePct } = params;
   const holdMs = holdSeconds * 1000;
   const held = samples.filter((sample) => sample.ts >= nowMs - holdMs && sample.ts <= nowMs);
   if (held.length < 3) {
@@ -78,8 +79,8 @@ export function detectDirection(params: {
       ok: false,
       side: price >= anchor.value ? "Up" : "Down",
       movePct: (Math.abs(price - anchor.value) / anchor.value) * 100,
-      driftPerSec: 0,
       reason: "insufficient-samples",
+      detail: { samples: held.length, needsSamples: 3 },
     };
   }
 
@@ -90,17 +91,11 @@ export function detectDirection(params: {
   const shakeoutSamples = samples.filter((s) => s.ts >= startMs && s.ts < nowMs - holdMs);
 
   let side: OutcomeSide = price >= anchor.value ? "Up" : "Down";
-  let movePct = (Math.abs(price - anchor.value) / anchor.value) * 100;
-  let driftPerSec = 0;
 
   if (allAboveAnchor) {
     let maxShakeout = 0;
-    let maxShakeoutTs = 0;
     for (const s of shakeoutSamples) {
-      if (s.value > maxShakeout) {
-        maxShakeout = s.value;
-        maxShakeoutTs = s.ts;
-      }
+      if (s.value > maxShakeout) maxShakeout = s.value;
     }
     const priorPumpPct = maxShakeout > 0 ? ((maxShakeout - anchor.value) / anchor.value) * 100 : 0;
     const isRollingDown =
@@ -108,22 +103,11 @@ export function detectDirection(params: {
       held[held.length - 1]!.value < held[0]!.value - tolerance &&
       held.every((s, i) => i === 0 || s.value <= held[0]!.value + tolerance);
 
-    if (isRollingDown) {
-      side = "Down";
-      movePct = ((maxShakeout - price) / anchor.value) * 100;
-      const holdDt = Math.max(10, (nowMs - held[0]!.ts) / 1000);
-      const velocity = Math.log(price / held[0]!.value) / holdDt;
-      driftPerSec = velocity * RECOVERY_DRIFT_DAMPING;
-    } else {
-      side = "Up";
-      movePct = ((price - anchor.value) / anchor.value) * 100;
-    }
+    side = isRollingDown ? "Down" : "Up";
   } else if (allBelowAnchor) {
     let minShakeout = Number.POSITIVE_INFINITY;
     for (const s of shakeoutSamples) {
-      if (s.value < minShakeout) {
-        minShakeout = s.value;
-      }
+      if (s.value < minShakeout) minShakeout = s.value;
     }
     const priorDumpPct = Number.isFinite(minShakeout) ? ((anchor.value - minShakeout) / anchor.value) * 100 : 0;
     const isRecoveringUp =
@@ -131,35 +115,25 @@ export function detectDirection(params: {
       held[held.length - 1]!.value > held[0]!.value + tolerance &&
       held.every((s, i) => i === 0 || s.value >= held[0]!.value - tolerance);
 
-    if (isRecoveringUp) {
-      side = "Up";
-      movePct = ((price - minShakeout) / anchor.value) * 100;
-      const holdDt = Math.max(10, (nowMs - held[0]!.ts) / 1000);
-      const velocity = Math.log(price / held[0]!.value) / holdDt;
-      driftPerSec = velocity * RECOVERY_DRIFT_DAMPING;
-    } else {
-      side = "Down";
-      movePct = ((anchor.value - price) / anchor.value) * 100;
-    }
+    side = isRecoveringUp ? "Up" : "Down";
   } else {
     return {
       ok: false,
       side,
-      movePct,
-      driftPerSec: 0,
+      movePct: (Math.abs(price - anchor.value) / anchor.value) * 100,
       reason: "direction-not-held",
       detail: { samples: held.length },
     };
   }
 
-  // Bound projected drift to chase ceiling
-  if (driftPerSec !== 0 && remainingSec > 0) {
-    const maxDrift = maxMovePct / 100;
-    const projected = Math.max(-maxDrift, Math.min(maxDrift, driftPerSec * remainingSec));
-    driftPerSec = projected / remainingSec;
-  }
+  // Distance to the win condition, not rally size off the shakeout extreme: a
+  // reversal entry still on the far side of the anchor is a negative move and
+  // must fail the min-move gate. shortcut: needs an EV model to trade the
+  // pre-cross reversal the guide describes.
+  const movePct =
+    side === "Up" ? ((price - anchor.value) / anchor.value) * 100 : ((anchor.value - price) / anchor.value) * 100;
 
-  return { ok: true, side, movePct, driftPerSec };
+  return { ok: true, side, movePct };
 }
 
 /** Chapter 2 of the guide, in code: observation, held direction, mispricing. */
@@ -181,10 +155,14 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
     };
   }
   if (remainingSec < params.minRemainingSeconds) {
-    return { action: "skip", reason: "too-late-in-window", detail: { remainingSec: Math.round(remainingSec) } };
+    return {
+      action: "skip",
+      reason: "too-late-in-window",
+      detail: { remainingSec: Math.floor(remainingSec), needsSec: params.minRemainingSeconds },
+    };
   }
   if (!anchor) return { action: "skip", reason: "no-anchor" };
-  if (price === null || price <= 0) return { action: "skip", reason: "no-price" };
+  if (price === null || price <= 0) return { action: "skip", reason: "no-price", detail: { price } };
 
   // Rule 3: no scheduled news inside the blackout window.
   if (ctx.newsBlocked) return { action: "skip", reason: "news-blackout" };
@@ -197,7 +175,11 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
     ctx.samples.length >= 2 ? ctx.samples[ctx.samples.length - 1]!.ts - ctx.samples[0]!.ts : 0;
   const enoughHistory = coverageMs >= CHOP_FILTER_MIN_COVERAGE_MS;
   if (hourly !== null && enoughHistory && hourly < config.entry.minHourlyRangePct) {
-    return { action: "skip", reason: "low-volatility-grind", detail: { hourlyRangePct: round(hourly) } };
+    return {
+      action: "skip",
+      reason: "low-volatility-grind",
+      detail: { hourlyRangePct: round(hourly), needsPct: config.entry.minHourlyRangePct },
+    };
   }
 
   // Tight chop filter (guide rule 3): if price oscillates in a tight $50 corridor
@@ -237,57 +219,89 @@ export function evaluateEntry(ctx: EntryContext): EntryDecision {
     holdSeconds: params.minDirectionHoldSeconds,
     noisePct: config.entry.noisePct,
     requiredMovePct: requiredMove,
-    maxMovePct: config.entry.maxMovePct,
-    remainingSec,
   });
 
   if (!dir.ok) {
     return { action: "skip", reason: dir.reason ?? "direction-not-held", detail: dir.detail };
   }
 
-  const { side, movePct, driftPerSec } = dir;
+  const { side, movePct } = dir;
 
   if (movePct < requiredMove) {
-    return { action: "skip", reason: "move-too-small", detail: { movePct: round(movePct), needsPct: requiredMove } };
+    return { action: "skip", reason: "move-too-small", detail: { movePct: round4(movePct), needsPct: requiredMove } };
   }
   // Don't chase: by the time it moved this far the odds have corrected.
   if (movePct > config.entry.maxMovePct) {
-    return { action: "skip", reason: "chasing-move", detail: { movePct: round(movePct) } };
+    return {
+      action: "skip",
+      reason: "chasing-move",
+      detail: { movePct: round4(movePct), maxPct: config.entry.maxMovePct },
+    };
   }
 
   const quote = market.quotes[side];
-  if (quote.ask === null || quote.bid === null) return { action: "skip", reason: "no-liquidity" };
+  if (quote.ask === null || quote.bid === null) {
+    return { action: "skip", reason: "no-liquidity", detail: { side } };
+  }
   // Compare in cents and round away float noise: 0.62 - 0.60 is
   // 0.020000000000000018, which would otherwise reject a legitimate 2c spread.
   const spreadCents = Number(((quote.ask - quote.bid) * 100).toFixed(4));
   if (spreadCents > config.entry.maxSpreadCents) {
-    return { action: "skip", reason: "spread-too-wide", detail: { spreadCents } };
+    return {
+      action: "skip",
+      reason: "spread-too-wide",
+      detail: { spreadCents, maxCents: config.entry.maxSpreadCents },
+    };
   }
   if (quote.ask > config.entry.maxEntryPriceCents) {
-    return { action: "skip", reason: "odds-too-expensive", detail: { ask: quote.ask } };
+    return {
+      action: "skip",
+      reason: "odds-too-expensive",
+      detail: { ask: quote.ask, maxAsk: config.entry.maxEntryPriceCents },
+    };
   }
 
   // Rule 2b: the odds must still lag the move.
   if (!ctx.volatilityPerSqrtSec) return { action: "skip", reason: "no-volatility" };
+  // No drift term: a 60s slope projected over the remaining minutes swamped the
+  // real distance-to-anchor and priced 8c underdogs at 61%.
   const pUp = upProbability({
     price,
     anchor: anchor.value,
     volatilityPerSqrtSec: ctx.volatilityPerSqrtSec,
     secondsRemaining: remainingSec,
-    driftPerSec,
   });
   const modelProb = side === "Up" ? pUp : 1 - pUp;
 
   if (modelProb < config.entry.minModelProb) {
-    return { action: "skip", reason: "model-prob-too-low", detail: { modelProb: round(modelProb, 3) } };
+    return {
+      action: "skip",
+      reason: "model-prob-too-low",
+      detail: { modelProb: round(modelProb, 3), minProb: config.entry.minModelProb },
+    };
   }
   if (modelProb > config.entry.maxModelProb) {
-    return { action: "skip", reason: "model-prob-too-high", detail: { modelProb: round(modelProb, 3) } };
+    return {
+      action: "skip",
+      reason: "model-prob-too-high",
+      detail: { modelProb: round(modelProb, 3), maxProb: config.entry.maxModelProb },
+    };
   }
 
   const edge = modelProb - quote.ask - takerFeePerShare(quote.ask, config.entry.feeRate);
+  if (edge > MAX_PLAUSIBLE_EDGE) {
+    return {
+      action: "skip",
+      reason: "model-edge-outlier",
+      detail: { edge: round(edge, 3), ask: quote.ask, maxEdge: MAX_PLAUSIBLE_EDGE },
+    };
+  }
   if (edge < config.entry.minEdge) {
-    return { action: "skip", reason: "no-mispricing-edge", detail: { edge: round(edge, 3), ask: quote.ask } };
+    return {
+      action: "skip",
+      reason: "no-mispricing-edge",
+      detail: { edge: round(edge, 3), ask: quote.ask, minEdge: config.entry.minEdge },
+    };
   }
 
   const sizeUsd = positionSizeUsd({
@@ -440,8 +454,6 @@ export function inspectMarket(ctx: EntryContext): MarketMetrics {
     holdSeconds: config.intervalParams[market.interval].minDirectionHoldSeconds,
     noisePct: config.entry.noisePct,
     requiredMovePct,
-    maxMovePct: config.entry.maxMovePct,
-    remainingSec: secondsRemaining,
   });
 
   const side = dir.side;
@@ -454,7 +466,6 @@ export function inspectMarket(ctx: EntryContext): MarketMetrics {
     anchor: anchor.value,
     volatilityPerSqrtSec: ctx.volatilityPerSqrtSec,
     secondsRemaining,
-    driftPerSec: dir.driftPerSec,
   });
   const modelProb = side === "Up" ? pUp : 1 - pUp;
   const edge = quote.ask === null ? null : modelProb - quote.ask - takerFeePerShare(quote.ask, config.entry.feeRate);

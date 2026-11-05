@@ -1,7 +1,7 @@
 import { Activity, Clock, Play, ShieldAlert, Target, Zap } from 'lucide-react'
 
 import { PolymarketLiveChart } from '../components/PolymarketEmbed'
-import { KIND_TONE, reasonLabel as label } from '../lib/labels'
+import { eventMetrics, KIND_TONE, reasonLabel as label } from '../lib/labels'
 import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, useToast } from '../components/ui'
 import {
   useBotEvents,
@@ -30,10 +30,13 @@ function windowLabel(slug: string): string {
   return Number.isFinite(epoch) ? `${interval} ${clock(epoch * 1000)}` : slug
 }
 
-function detailValue(value: unknown): string {
-  if (value === null || value === undefined) return '—'
-  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(3)
-  return String(value)
+function MetricChip({ text, limit }: { text: string; limit?: string }) {
+  return (
+    <span className="flex items-baseline gap-1 rounded-[7px] bg-surface-2 px-1.5 py-0.5 tabular-nums">
+      <span className="text-[11px] font-medium text-fg">{text}</span>
+      {limit && <span className="text-[10.5px] text-faint">{limit}</span>}
+    </span>
+  )
 }
 
 export function Live() {
@@ -146,9 +149,7 @@ export function Live() {
 }
 
 function EventRow({ event }: { event: BotEvent }) {
-  const chips = Object.entries(event.detail ?? {})
-    .filter(([key]) => ['movePct', 'modelProb', 'edge', 'spreadCents', 'anchorSource'].includes(key))
-    .slice(0, 3)
+  const metrics = eventMetrics(event.reason, event.detail)
 
   return (
     <li className="flex items-start gap-3 py-2.5">
@@ -163,12 +164,10 @@ function EventRow({ event }: { event: BotEvent }) {
           {event.side ? ` · ${event.side}` : ''}
         </p>
       </div>
-      {chips.length > 0 && (
-        <div className="hidden shrink-0 items-center gap-1 lg:flex">
-          {chips.map(([key, value]) => (
-            <span key={key} className="rounded-[7px] bg-surface-2 px-1.5 py-0.5 text-[11px] tabular-nums text-muted">
-              {detailValue(value)}
-            </span>
+      {metrics.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+          {metrics.map((metric) => (
+            <MetricChip key={metric.text} text={metric.text} limit={metric.limit} />
           ))}
         </div>
       )}

@@ -635,6 +635,8 @@ export class Engine {
         p: decision.modelProb.toFixed(3),
         edge: decision.edge.toFixed(3),
         movePct: decision.movePct.toFixed(3),
+        minEdge: this.config.entry.minEdge,
+        needsPct: this.config.entry.minMovePct,
       });
       this.record({
         ts: new Date(nowMs).toISOString(),

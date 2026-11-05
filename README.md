@@ -16,8 +16,8 @@ unless you pass `--live`.**
 | Guide rule | Implementation |
 | --- | --- |
 | "No entry in the first 5 minutes" | `intervalParams["15m"].observationSeconds = 300` (100s for 5m markets) — `src/signals.ts` |
-| "Direction held for ≥ 60 seconds" | Post-shakeout direction (continuation or reversal recovery) must hold for at least 60s outside noise band — `src/signals.ts` |
-| "Odds are still mispriced" | Log-normal model with post-shakeout momentum drift `p = Φ((ln(price/anchor) + μ·τ) / (σ·√τ))`, requiring `edge ≥ 0.06` |
+| "Direction held for ≥ 60 seconds" | Direction must hold for at least 60s outside the noise band. A reversal only qualifies once price has crossed the anchor: "move" is the signed distance to the win condition, not rally size off the shakeout low — `src/signals.ts` |
+| "Odds are still mispriced" | Zero-drift log-normal model `p = Φ(ln(price/anchor) / (σ·√τ))`, requiring `0.06 ≤ edge ≤ 0.30` (a bigger edge is a model defect, not a bargain) |
 | "No scheduled news before resolution" | `news.events` ISO list with a ±15-minute blackout — `src/news.ts` |
 | "Sit out low-volatility grind & tight chop" | Skip when BTC 1-hour range is under `minHourlyRangePct` (0.3%) or observation range is under `tightChopRangeUsd` ($50) |
 | "Only trade when the spread is ≤ 2¢" | `maxSpreadCents: 2`, read from the live CLOB book |
@@ -82,9 +82,15 @@ bun test                # strategy/risk unit tests
 
 ```
 12:04:10 SKIP   no trade: move-too-small        slug=btc-updown-15m-… movePct=0.031 needsPct=0.05
-12:07:22 ENTRY  entered position                slug=btc-updown-15m-… side=Up price=0.32 shares=250 usd=80.00 p=0.687 edge=0.351 movePct=0.078
+12:06:40 SKIP   no trade: model-prob-too-low    slug=btc-updown-15m-… modelProb=0.113 minProb=0.52
+12:06:40 SKIP   no trade: spread-too-wide       slug=btc-updown-5m-…  spreadCents=4 maxCents=2
+12:07:22 ENTRY  entered position                slug=btc-updown-15m-… side=Up price=0.32 shares=250 usd=80.00 p=0.687 edge=0.351 movePct=0.078 minEdge=0.06 needsPct=0.05
 12:11:05 EXIT   closed position                 slug=btc-updown-15m-… side=Up at=0.86 pnl=$134.83 why=profit-target-hit
 ```
+
+Every row carries the measured value next to the threshold it was judged against: `movePct`/`needsPct`,
+`modelProb`/`minProb` or `maxProb`, `edge`/`minEdge` or `maxEdge`, `spreadCents`/`maxCents`,
+`ask`/`maxAsk`, `hourlyRangePct`/`needsPct`, `remainingSec`/`needsSec`.
 
 ## Dashboard
 

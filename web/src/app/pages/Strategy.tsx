@@ -63,7 +63,7 @@ const ENTRY_GATES = [
     title: 'True Probability Edge ≥ 6¢',
     subtitle: 'Mispricing Model',
     icon: Percent,
-    body: 'True probability is calculated via log-normal Brownian motion with momentum drift. You only buy when our probability exceeds the CLOB ask plus taker fees by at least 6¢.',
+    body: 'True probability is calculated via zero-drift log-normal Brownian motion from the window open. You only buy when our probability exceeds the CLOB ask plus taker fees by at least 6¢, and reject anything over 30¢ as a model defect.',
     setting: 'minEdge: 0.06 · minModelProb: 0.52 · maxModelProb: 0.72',
     keyMetric: 'Edge ≥ 0.06',
     metricLabel: 'Statistical surplus',
@@ -513,8 +513,8 @@ export function Strategy() {
               {/* Formula 1: Drift-Adjusted Probability Model */}
               <div id="formula-probability" className="scroll-mt-16 rounded-card border border-line bg-surface-2/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h4 className="text-[14.5px] font-bold text-fg">1. Log-Normal Probability Model with Momentum Drift</h4>
-                  <Badge tone="accent">Drifted Brownian Motion</Badge>
+                  <h4 className="text-[14.5px] font-bold text-fg">1. Log-Normal Probability Model</h4>
+                  <Badge tone="accent">Zero-Drift Brownian Motion</Badge>
                 </div>
                 <p className="mt-1 text-[13px] text-muted">
                   Estimates the cumulative probability that BTC ends above the open reference price at window close:
@@ -527,7 +527,7 @@ export function Strategy() {
                     <span className="inline-block px-1">
                       <span className="inline-flex flex-col text-center align-middle text-[15px]">
                         <span className="border-b border-fg pb-0.5 font-normal">
-                          ln(<i>P</i> / <i>P</i><sub>0</sub>) + μ · τ
+                          ln(<i>P</i> / <i>P</i><sub>0</sub>)
                         </span>
                         <span className="pt-0.5 font-normal">
                           σ · √τ
@@ -544,9 +544,6 @@ export function Strategy() {
                   </div>
                   <div className="rounded bg-surface p-2 border border-line/70">
                     <strong className="font-mono text-accent">P₀</strong> : Window open reference anchor ($67,400)
-                  </div>
-                  <div className="rounded bg-surface p-2 border border-line/70">
-                    <strong className="font-mono text-accent">μ</strong> : Damped post-shakeout recovery velocity (damped by 0.42)
                   </div>
                   <div className="rounded bg-surface p-2 border border-line/70">
                     <strong className="font-mono text-accent">τ</strong> : Remaining time to expiry in seconds

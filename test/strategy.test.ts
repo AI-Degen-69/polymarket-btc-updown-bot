@@ -220,19 +220,57 @@ describe("entry rules", () => {
     expect(decision).toEqual(expect.objectContaining({ action: "skip", reason: "news-blackout" }));
   });
 
-  test("enters on post-shakeout recovery reversal (guide's real winning trade)", () => {
-    // Replicates Johannes's real trade example:
-    // Window open at 14:00 with anchor at 67,400.
-    // Early shakeout dumps to 67,150 (-0.37%).
-    // Minute 5-7: stabilizes and rallies to 67,250 with direction held for 60s.
-    // UP odds are mispriced at 28c.
+  /**
+   * Trade replay from the live log: a 60s bounce around 12:38 priced an 8c Up
+   * contract at 61% because the slope was projected over the whole window.
+   */
+  const bounceBelowAnchor = () => {
+    const anchorValue = 79_994;
+    const list: PriceSample[] = [];
+    for (let t = NOW - 600_000; t < NOW - 300_000; t += 2_000) list.push({ ts: t, value: 79_820 });
+    for (let t = NOW - 300_000; t < NOW - 60_000; t += 2_000) list.push({ ts: t, value: 79_790 });
+    for (let t = NOW - 60_000; t <= NOW; t += 2_000) {
+      const progress = (t - (NOW - 60_000)) / 60_000;
+      list.push({ ts: t, value: 79_790 + progress * 28 });
+    }
+    return { anchorValue, list };
+  };
+
+  test("refuses a reversal entry while price is still the wrong side of the anchor", () => {
+    const { anchorValue, list } = bounceBelowAnchor();
+    // Replicates the guide's example shape: dump to 67,150, then a 60s rally to 67,250 (anchor 67,400).
+    const decision = evaluateEntry(
+      entryContext({
+        market: market({
+          quotes: {
+            Up: { bid: 0.07, ask: 0.08, bidSize: 500, askSize: 500 },
+            Down: { bid: 0.91, ask: 0.92, bidSize: 500, askSize: 500 },
+          },
+        }),
+        anchor: { value: anchorValue, source: "live", capturedAtMs: NOW - 360_000 },
+        price: 79_818,
+        samples: list,
+        volatilityPerSqrtSec: 8.9e-5,
+      }),
+    );
+    expect(decision).toEqual(expect.objectContaining({ action: "skip", reason: "move-too-small" }));
+    // And the model now agrees with the book instead of calling it a 61% shot.
+    expect(inspectMarket(entryContext({
+      anchor: { value: anchorValue, source: "live", capturedAtMs: NOW - 360_000 },
+      price: 79_818,
+      samples: list,
+      volatilityPerSqrtSec: 8.9e-5,
+    })).modelProb!).toBeLessThan(0.2);
+  });
+
+  test("enters once the recovery has crossed the anchor", () => {
     const startMs = NOW - 420_000;
     const m = market({
       startMs,
       endMs: startMs + 900_000,
       quotes: {
-        Up: { bid: 0.27, ask: 0.28, bidSize: 500, askSize: 500 },
-        Down: { bid: 0.71, ask: 0.72, bidSize: 500, askSize: 500 },
+        Up: { bid: 0.59, ask: 0.6, bidSize: 500, askSize: 500 },
+        Down: { bid: 0.39, ask: 0.4, bidSize: 500, askSize: 500 },
       },
     });
 
@@ -247,26 +285,46 @@ describe("entry rules", () => {
     for (let t = startMs + 120_000; t < startMs + 300_000; t += 2_000) {
       samplesList.push({ ts: t, value: 67_150 });
     }
-    for (let t = startMs + 300_000; t <= NOW; t += 2_000) {
-      const progress = (t - (startMs + 300_000)) / 120_000;
-      samplesList.push({ ts: t, value: 67_150 + progress * 100 });
+    for (let t = startMs + 300_000; t < startMs + 360_000; t += 2_000) {
+      const progress = (t - (startMs + 300_000)) / 60_000;
+      samplesList.push({ ts: t, value: 67_150 + progress * 310 });
+    }
+    // Crossed and held above the anchor for the full 60s hold window.
+    for (let t = startMs + 360_000; t <= NOW; t += 2_000) {
+      samplesList.push({ ts: t, value: 67_460 });
     }
 
+    const cfg = config();
+    cfg.entry.maxModelProb = 0.99;
     const decision = evaluateEntry(
       entryContext({
         market: m,
         anchor: { value: 67_400, source: "live", capturedAtMs: startMs },
-        price: 67_250,
+        price: 67_460,
         samples: samplesList,
+        config: cfg,
       }),
     );
 
     expect(decision.action).toBe("enter");
     if (decision.action !== "enter") throw new Error("expected entry");
     expect(decision.side).toBe("Up");
-    expect(decision.price).toBe(0.28);
-    expect(decision.edge).toBeGreaterThan(0.06);
-    expect(decision.modelProb).toBeGreaterThan(0.5);
+    expect(decision.movePct).toBeGreaterThan(0.05);
+  });
+
+  test("refuses an edge too large to be real", () => {
+    const cfg = config();
+    cfg.entry.maxModelProb = 0.99;
+    const cheap = market({
+      quotes: {
+        Up: { bid: 0.44, ask: 0.45, bidSize: 500, askSize: 500 },
+        Down: { bid: 0.54, ask: 0.55, bidSize: 500, askSize: 500 },
+      },
+    });
+    const decision = evaluateEntry(
+      entryContext({ market: cheap, price: 100_100, samples: samples(100_100), config: cfg }),
+    );
+    expect(decision).toEqual(expect.objectContaining({ action: "skip", reason: "model-edge-outlier" }));
   });
 
   test("sits out tight chop in observation window (< $50 range)", () => {

@@ -14,7 +14,8 @@
     "api": "bun run src/dashboard.ts",
     "reset": "bun run src/index.ts reset",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "replay:guide": "bun run scripts/replay-guide.ts"
   },
   "dependencies": {
     "@polymarket/client": "latest",

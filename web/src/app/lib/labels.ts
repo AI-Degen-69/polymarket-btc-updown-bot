@@ -53,3 +53,115 @@ export const KIND_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warni
 
 export const reasonLabel = (reason: string | null | undefined) =>
   !reason ? '—' : (LABELS[reason] ?? reason.replace(/[:-]/g, ' ').replace(/\s+/g, ' ').trim())
+
+export type MetricUnit = 'ratio' | 'pct' | 'cents' | 'price' | 'sec' | 'usd' | 'count'
+
+export interface MetricSpec {
+  /** Detail key holding the measured value. */
+  key: string
+  /** Detail key holding the limit it was judged against. */
+  threshold?: string
+  op?: '<' | '>'
+  unit?: MetricUnit
+  label?: string
+}
+
+/**
+ * Which measured value and which limit each verdict is judged on. The engine
+ * writes both into the event detail, so the journal can show `0.038% < 0.05%`
+ * instead of an unlabelled number.
+ */
+export const REASON_METRICS: Record<string, MetricSpec[]> = {
+  'observation-window': [{ key: 'elapsedSec', threshold: 'needsSec', op: '<', unit: 'sec' }],
+  'too-late-in-window': [{ key: 'remainingSec', threshold: 'needsSec', op: '<', unit: 'sec' }],
+  'low-volatility-grind': [{ key: 'hourlyRangePct', threshold: 'needsPct', op: '<', unit: 'pct' }],
+  'tight-chop-no-trend': [{ key: 'obsRangeUsd', threshold: 'minRangeUsd', op: '<', unit: 'usd' }],
+  'insufficient-samples': [{ key: 'samples', threshold: 'needsSamples', op: '<', unit: 'count' }],
+  'move-too-small': [{ key: 'movePct', threshold: 'needsPct', op: '<', unit: 'pct' }],
+  'chasing-move': [{ key: 'movePct', threshold: 'maxPct', op: '>', unit: 'pct' }],
+  'spread-too-wide': [{ key: 'spreadCents', threshold: 'maxCents', op: '>', unit: 'cents' }],
+  'odds-too-expensive': [{ key: 'ask', label: 'ask', threshold: 'maxAsk', op: '>', unit: 'price' }],
+  'model-prob-too-low': [{ key: 'modelProb', label: 'p', threshold: 'minProb', op: '<', unit: 'ratio' }],
+  'model-prob-too-high': [{ key: 'modelProb', label: 'p', threshold: 'maxProb', op: '>', unit: 'ratio' }],
+  'no-mispricing-edge': [{ key: 'edge', label: 'edge', threshold: 'minEdge', op: '<', unit: 'ratio' }],
+  'model-edge-outlier': [{ key: 'edge', label: 'edge', threshold: 'maxEdge', op: '>', unit: 'ratio' }],
+  'below-min-order-size': [{ key: 'shares', label: 'shares', threshold: 'minShares', op: '<' }],
+  'direction-not-held': [
+    { key: 'samples', label: 'samples', unit: 'count' },
+    { key: 'movePct', label: 'move', unit: 'pct' },
+  ],
+  'no-liquidity': [{ key: 'side', label: 'side' }],
+  // Journal rows that are not entry attempts: anchors and open-position holds.
+  'anchor captured at window open': [
+    { key: 'price', label: 'anchor', unit: 'usd' },
+    { key: 'source', label: 'source' },
+  ],
+  'thesis-intact': [{ key: 'bid', label: 'bid', unit: 'price' }],
+  'stalled-but-waiting': [
+    { key: 'bid', label: 'bid', unit: 'price' },
+    { key: 'stalledSec', label: 'stalled', unit: 'sec' },
+  ],
+  'accept-loss-at-resolution': [{ key: 'bid', label: 'bid', unit: 'price' }],
+  'no-bid': [{ key: 'bid', label: 'bid', unit: 'price' }],
+  'confirmed-mispricing': [
+    { key: 'price', label: 'price', unit: 'price' },
+    { key: 'modelProb', label: 'p', unit: 'ratio' },
+    { key: 'edge', label: 'edge', unit: 'ratio' },
+  ],
+}
+
+/** Rows without a paired limit still show what was measured, not empty boxes. */
+const FALLBACK_METRICS: MetricSpec[] = [
+  { key: 'modelProb', label: 'p', unit: 'ratio' },
+  { key: 'edge', label: 'edge', unit: 'ratio' },
+  { key: 'movePct', label: 'move', unit: 'pct' },
+  { key: 'spreadCents', label: 'spread', unit: 'cents' },
+  { key: 'anchorSource' },
+]
+
+function formatMetric(value: unknown, unit?: MetricUnit, label?: string): string | null {
+  if (value === null || value === undefined || value === '') return null
+  if (typeof value === 'string') return label ? `${label} ${value}` : value
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  let text: string
+  switch (unit) {
+    case 'pct':
+      text = `${Number(value.toFixed(4))}%`
+      break
+    case 'cents':
+      text = `${Number(value.toFixed(2))}¢`
+      break
+    case 'price':
+      text = `${Math.round(value * 100)}¢`
+      break
+    case 'sec':
+      text = `${Math.round(value)}s`
+      break
+    case 'usd':
+      text = Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`
+      break
+    case 'count':
+      text = `${Math.round(value)}`
+      break
+    default:
+      text = Number.isInteger(value) ? String(value) : value.toFixed(3)
+  }
+  return label ? `${label} ${text}` : text
+}
+
+/** Value + the limit it missed, for the decision journal row. */
+export function eventMetrics(
+  reason: string,
+  detail: Record<string, unknown> | undefined,
+): { text: string; limit?: string }[] {
+  if (!detail) return []
+  const out: { text: string; limit?: string }[] = []
+  for (const spec of REASON_METRICS[reason] ?? FALLBACK_METRICS) {
+    const text = formatMetric(detail[spec.key], spec.unit, spec.label)
+    if (!text) continue
+    const limit = spec.threshold ? formatMetric(detail[spec.threshold], spec.unit) : null
+    out.push({ text, limit: limit && spec.op ? `${spec.op} ${limit}` : undefined })
+    if (out.length === 3) break
+  }
+  return out
+}
