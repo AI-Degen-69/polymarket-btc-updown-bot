@@ -11,18 +11,20 @@
     "kellyCut": 0.25,
     "maxPositionPct": 0.08,
     "feeRate": 0.07,
-    "nonLiveAnchorExtraMovePct": 0.05
+    "nonLiveAnchorExtraMovePct": 0.05,
+    "tightChopRangeUsd": 50
   },
   "bankrollUsd": 1000,
   "exit": {
     "profitTargetCents": 0.85,
     "stallBandLow": 0.6,
     "stallBandHigh": 0.7,
-    "acceptLossBelowCents": 0.2
+    "acceptLossBelowCents": 0.2,
+    "stallGraceSeconds": 15
   },
   "risk": {
-    "maxTradesPerDay": 6,
-    "maxConsecutiveLosses": 2,
+    "maxTradesPerDay": 99,
+    "maxConsecutiveLosses": 10,
     "dailyLossLimitPct": 50,
     "maxDrawdownPct": 15,
     "maxConcurrentPositions": 1,
@@ -47,6 +49,7 @@
     "5m"
   ],
   "news": {
-    "events": []
+    "events": [],
+    "blackoutMinutes": 15
   }
 }
