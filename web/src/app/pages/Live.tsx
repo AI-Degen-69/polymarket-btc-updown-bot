@@ -1,5 +1,7 @@
-import { Activity, Clock, Play, ShieldAlert, Target, TrendingDown, TrendingUp, Zap } from 'lucide-react'
+import { Activity, Clock, Play, ShieldAlert, Target, Zap } from 'lucide-react'
 
+import { PolymarketLiveChart } from '../components/PolymarketEmbed'
+import { KIND_TONE, reasonLabel as label } from '../lib/labels'
 import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, useToast } from '../components/ui'
 import {
   useBotEvents,
@@ -10,73 +12,14 @@ import {
   type BotEvent,
   type BotSnapshot,
   type BotTrade,
-  type MarketView,
   type PositionView,
 } from '../lib/bot'
 import { cx } from '../lib/cx'
-
-const LABELS: Record<string, string> = {
-  'observation-window': 'Waiting out the opening shakeout',
-  'too-late-in-window': 'Too close to resolution',
-  'no-anchor': 'Reference price not captured yet',
-  'no-price': 'No price feed',
-  'news-blackout': 'Scheduled news blackout',
-  'low-volatility-grind': 'Low-volatility grind — sitting out',
-  'insufficient-samples': 'Not enough price samples yet',
-  'direction-not-held': 'Direction has not held',
-  'move-too-small': 'Move too small to trade',
-  'chasing-move': 'Move already extended — not chasing',
-  'no-liquidity': 'No quotes on this side',
-  'spread-too-wide': 'Spread too wide',
-  'odds-too-expensive': 'Odds already too expensive',
-  'no-volatility': 'Volatility estimate unavailable',
-  'model-prob-too-low': 'Model probability too low',
-  'model-prob-too-high': 'Model probability too high',
-  'no-mispricing-edge': 'No mispricing left after fees',
-  'below-min-order-size': 'Size below the market minimum',
-  'confirmed-mispricing': 'Confirmed mispricing',
-  'position-open': 'Already holding this window',
-  'market-not-open': 'Market not accepting orders',
-  'profit-target-hit': 'Profit target hit — sold',
-  'odds-stalled': 'Odds stalled — sold',
-  'thesis-intact': 'Holding, thesis intact',
-  'stalled-but-waiting': 'Stalled, waiting out the clock',
-  'accept-loss-at-resolution': 'Holding to resolution',
-  'news-invalidated-thesis': 'News invalidated the thesis — sold',
-  won: 'Resolved in favour',
-  lost: 'Resolved against',
-  'max-trades-per-day': 'Daily trade cap reached',
-  'max-concurrent-positions': 'Position already open',
-  cooldown: 'Cooling down after a loss',
-  'kill-switch-file-present': 'Kill switch engaged',
-  'daily-loss-limit': 'Daily loss limit hit — halted',
-  'max-drawdown': 'Drawdown limit hit — halted',
-  'unresolved-fallback': 'Settled without official resolution',
-  'entry-did-not-fill': 'Entry order did not fill',
-}
-
-const KIND_TONE: Record<string, 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info'> = {
-  entry: 'success',
-  exit: 'info',
-  settle: 'accent',
-  hold: 'neutral',
-  skip: 'neutral',
-  blocked: 'warning',
-  anchor: 'info',
-  risk: 'danger',
-  info: 'neutral',
-  error: 'danger',
-}
-
-const label = (reason: string | null | undefined) =>
-  !reason ? '—' : (LABELS[reason] ?? reason.replace(/[:-]/g, ' ').replace(/\s+/g, ' ').trim())
 
 const money = (value: number | null | undefined) =>
   value === null || value === undefined ? '—' : `${value < 0 ? '−' : ''}$${Math.abs(value).toFixed(2)}`
 const cents = (value: number | null | undefined) =>
   value === null || value === undefined ? '—' : `${Math.round(value * 100)}¢`
-const pct = (value: number | null | undefined, digits = 3) =>
-  value === null || value === undefined ? '—' : `${value.toFixed(digits)}%`
 const clock = (ts: number | string) =>
   new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
@@ -164,15 +107,7 @@ export function Live() {
               </p>
             </Card>
 
-            <div className="mt-3 grid gap-3 lg:grid-cols-2">
-              {data.markets.length === 0 ? (
-                <Card className="lg:col-span-2">
-                  <EmptyState icon={<Target />} title="No open windows yet" description="The bot discovers the 5- and 15-minute markets on its next tick." />
-                </Card>
-              ) : (
-                data.markets.map((market) => <WindowCard key={market.slug} market={market} />)
-              )}
-            </div>
+            <PolymarketLiveChart markets={data.markets} positions={data.positions} />
 
             <div className="mt-3 grid gap-3 lg:grid-cols-3">
               <Card className="p-5 lg:col-span-2">
@@ -206,95 +141,6 @@ export function Live() {
           </>
         )
       )}
-    </div>
-  )
-}
-
-function WindowCard({ market }: { market: MarketView }) {
-  const total = Math.max(1, market.endMs - market.startMs)
-  const elapsed = Math.min(total, Math.max(0, total - market.secondsRemaining * 1000))
-  const progress = elapsed / total
-  const tone = market.verdict.action === 'enter' ? 'success' : market.verdict.action === 'blocked' ? 'warning' : 'neutral'
-  const details = Object.entries(market.verdict.detail ?? {})
-  const side = market.side
-
-  return (
-    <Card className="p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="flex items-center gap-2 text-[14px] font-semibold">
-            {market.interval} window
-            <span className="text-[12px] font-normal text-faint">{clock(market.startMs)}</span>
-          </h2>
-          <p className="mt-0.5 font-mono text-[11.5px] text-faint">{market.slug}</p>
-        </div>
-        <Badge tone={tone} dot>
-          {label(market.verdict.reason)}
-        </Badge>
-      </div>
-
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-surface-2">
-        <div
-          className={cx('h-full rounded-full', market.verdict.action === 'enter' ? 'bg-success' : 'bg-accent')}
-          style={{ width: `${Math.round(progress * 100)}%` }}
-        />
-      </div>
-      <div className="mt-1 flex justify-between text-[11.5px] text-faint">
-        <span>{Math.round(progress * 100)}% elapsed</span>
-        <span>{Math.max(0, Math.round(market.secondsRemaining))}s left</span>
-      </div>
-
-      <dl className="mt-4 grid grid-cols-3 gap-x-4 gap-y-3">
-        <Field label="BTC" value={market.price === null ? '—' : market.price.toFixed(2)} />
-        <Field label="Anchor" value={market.anchor ? market.anchor.value.toFixed(2) : 'pending'} hint={market.anchor?.source} />
-        <Field label="Move" value={pct(market.movePct)} hint={`needs ${market.requiredMovePct}%`} />
-        <Field label="Model p" value={market.modelProb === null ? '—' : market.modelProb.toFixed(3)} />
-        <Field label="Edge" value={market.edge === null ? '—' : `${(market.edge * 100).toFixed(1)}¢`} />
-        <Field label="Spread" value={market.spreadCents === null ? '—' : `${market.spreadCents.toFixed(1)}¢`} />
-      </dl>
-
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {(['Up', 'Down'] as const).map((outcome) => (
-          <div
-            key={outcome}
-            className={cx(
-              'rounded-tile border px-3 py-2',
-              side === outcome ? 'border-accent/40 bg-accent-soft' : 'border-line bg-surface-2/50',
-            )}
-          >
-            <p className="flex items-center gap-1.5 text-[12px] text-muted">
-              {outcome === 'Up' ? <TrendingUp className="size-3.5" /> : <TrendingDown className="size-3.5" />}
-              {outcome}
-              {side === outcome && <span className="text-[11px] text-accent">leading</span>}
-            </p>
-            <p className="mt-0.5 text-[13.5px] font-medium tabular-nums">
-              {cents(market.quotes[outcome].bid)} / {cents(market.quotes[outcome].ask)}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {details.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {details.slice(0, 6).map(([key, value]) => (
-            <span key={key} className="rounded-[7px] bg-surface-2 px-1.5 py-0.5 text-[11.5px] tabular-nums text-muted">
-              {key}: {detailValue(value)}
-            </span>
-          ))}
-        </div>
-      )}
-    </Card>
-  )
-}
-
-function Field({ label: fieldLabel, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div>
-      <dt className="text-[11px] uppercase tracking-wide text-faint">{fieldLabel}</dt>
-      <dd className="mt-0.5 text-[13px] font-medium tabular-nums">
-        {value}
-        {hint && <span className="ml-1 text-[11px] font-normal text-faint">{hint}</span>}
-      </dd>
     </div>
   )
 }
