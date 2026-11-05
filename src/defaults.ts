@@ -6,7 +6,7 @@ import type { Interval } from "./types.ts";
  * Shared with the web UI, which uses the same table to validate before save.
  */
 export const EDITABLE: Record<string, [number, number]> = {
-  bankrollUsd: [1, 10_000_000],
+  bankrollUsd: [1, Number.POSITIVE_INFINITY],
   "entry.minEdge": [0, 0.9],
   "entry.minModelProb": [0.01, 0.99],
   "entry.maxModelProb": [0.01, 0.999],

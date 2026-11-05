@@ -4,7 +4,7 @@ import { intervalSeconds, loadConfig, type BotConfig } from "./config.ts";
 import { LiveExchange } from "./exchangeLive.ts";
 import type { Exchange } from "./exchange.ts";
 import { log, money, sleep } from "./log.ts";
-import { discoverMarket, refreshQuotes, windowStartSec } from "./market.ts";
+import { discoverMarket, fetchBookQuote, refreshQuotes, windowStartSec } from "./market.ts";
 import { newsStatus } from "./news.ts";
 import { volatilityPerSqrtSecond, rangePct } from "./probability.ts";
 import type { PriceFeed } from "./priceFeed.ts";
@@ -307,7 +307,15 @@ export class Engine {
 
   private async managePositions(nowMs: number): Promise<void> {
     for (const position of [...this.state.positions]) {
-      const market = this.markets.get(position.slug);
+      const market = this.markets.get(position.slug) ?? null;
+
+      // Markets are pruned 30 minutes after close, and a restart never reloads
+      // old windows. A position still open then must settle anyway, so fall
+      // back to the discovery path instead of holding it forever.
+      if (!market && nowMs >= position.endMs) {
+        await this.settle(position, null, nowMs);
+        continue;
+      }
       if (!market) continue;
 
       if (market.resolved || nowMs >= market.endMs) {
@@ -392,15 +400,20 @@ export class Engine {
     }
   }
 
-  private async settle(position: Position, market: MarketRef, nowMs: number): Promise<void> {
-    let outcome: OutcomeSide | null = market.resolved;
+  private async settle(position: Position, market: MarketRef | null, nowMs: number): Promise<void> {
+    let outcome: OutcomeSide | null = market?.resolved ?? null;
     if (!outcome) {
       try {
-        const fresh = await discoverMarket(this.config.asset, market.interval, market.startMs / 1000);
+        // Position carries the window end, so this works even after the market
+        // fell out of the cache.
+        const startSec = Math.floor(position.endMs / 1000) - intervalSeconds(position.interval);
+        const fresh = await discoverMarket(this.config.asset, position.interval, startSec);
         if (fresh) {
-          market.resolved = fresh.resolved;
-          market.finalPrice = fresh.finalPrice;
-          market.closed = fresh.closed;
+          if (market) {
+            market.resolved = fresh.resolved;
+            market.finalPrice = fresh.finalPrice;
+            market.closed = fresh.closed;
+          }
           outcome = fresh.resolved;
         }
       } catch {
@@ -408,10 +421,10 @@ export class Engine {
       }
     }
 
-    const overdueMs = nowMs - market.endMs;
+    const overdueMs = nowMs - position.endMs;
     if (!outcome && overdueMs > 30 * 60 * 1000) {
       // Give up gracefully rather than drift forever, at last known bid.
-      const bid = market.quotes[position.side].bid ?? 0;
+      const bid = market?.quotes[position.side].bid ?? (await fetchBookQuote(position.tokenId)).bid ?? 0;
       const proceeds = position.shares * bid;
       const pnl = proceeds - position.costUsd;
       this.closePosition(position);
@@ -434,7 +447,7 @@ export class Engine {
         mode: this.exchange.mode,
       });
       this.journalEvent(`trade:${position.id}`, "settle", nowMs, "settle", "unresolved-fallback", {
-        market,
+        market: market ?? undefined,
         side: position.side,
         detail: { price: bid, pnlUsd: Math.round(pnl * 100) / 100 },
       });
@@ -472,7 +485,7 @@ export class Engine {
       mode: this.exchange.mode,
     });
     this.journalEvent(`trade:${position.id}`, "settle", nowMs, "settle", won ? "won" : "lost", {
-      market,
+      market: market ?? undefined,
       side: position.side,
       detail: { outcome, pnlUsd: Math.round(pnl * 100) / 100 },
     });

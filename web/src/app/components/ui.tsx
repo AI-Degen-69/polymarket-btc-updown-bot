@@ -23,7 +23,7 @@ type ButtonSize = 'md' | 'sm' | 'icon' | 'icon-sm'
 
 // No disabled:pointer-events-none — it would defeat the not-allowed cursor and the title tooltip on disabled buttons.
 const buttonBase =
-  'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0'
+  'inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded-control font-medium transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.98] disabled:opacity-50 disabled:hover:bg-transparent [&_svg]:size-4 [&_svg]:shrink-0'
 const buttonVariants: Record<ButtonVariant, string> = {
   primary: 'bg-fg text-surface shadow-[inset_0_1px_0_rgb(255_255_255/0.12)] hover:bg-fg/85',
   secondary: 'border border-line-strong bg-surface text-fg shadow-[0_1px_1px_rgb(20_20_24/0.04)] hover:bg-surface-2',
@@ -59,8 +59,8 @@ export const invalidInputClass =
   'h-9 w-full min-w-0 rounded-control border border-danger bg-surface px-3 text-[13.5px] text-fg placeholder:text-faint transition-[border-color,box-shadow] focus:border-danger focus:outline-none focus:ring-[3px] focus:ring-danger/15 disabled:opacity-60'
 
 export function Input({ className, id, invalid, ...rest }: ComponentPropsWithoutRef<'input'> & { invalid?: boolean }) {
-  const { id: fieldId, errorId } = useFieldId()
-  return <input id={id ?? fieldId} aria-invalid={invalid || undefined} aria-describedby={errorId} className={cx(invalid ? invalidInputClass : inputClass, className)} {...rest} />
+  const fieldId = useFieldId()
+  return <input id={id ?? fieldId} aria-invalid={invalid || undefined} className={cx(invalid ? invalidInputClass : inputClass, className)} {...rest} />
 }
 
 export function Textarea({ className, ...rest }: ComponentPropsWithoutRef<'textarea'>) {
@@ -68,10 +68,10 @@ export function Textarea({ className, ...rest }: ComponentPropsWithoutRef<'texta
 }
 
 export function Select({ className, children, id, ...rest }: ComponentPropsWithoutRef<'select'>) {
-  const { id: fieldId, errorId } = useFieldId()
+  const fieldId = useFieldId()
   return (
     <span className={cx('relative block', className)}>
-      <select id={id ?? fieldId} aria-describedby={errorId} className={cx(inputClass, 'appearance-none pr-9')} {...rest}>
+      <select id={id ?? fieldId} className={cx(inputClass, 'appearance-none pr-9')} {...rest}>
         {children}
       </select>
       <ChevronDown className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
@@ -107,13 +107,15 @@ export function Field({ label, children, hint, tip, error, className }: { label:
             <span
               tabIndex={0}
               aria-label={`About: ${label}`}
+<<<<<<< HEAD
               aria-describedby={tipId}
+=======
+>>>>>>> f44c89b
               className="cursor-help rounded-full text-faint transition-colors hover:text-fg focus-visible:text-fg"
             >
               <Info className="size-3.5" aria-hidden="true" />
             </span>
             <span
-              id={tipId}
               role="tooltip"
               className="pointer-events-none absolute bottom-full left-0 z-50 mb-1.5 hidden w-72 rounded-tile bg-fg px-3 py-2.5 text-surface shadow-pop group-hover/tip:block group-focus-within/tip:block"
             >
@@ -122,14 +124,13 @@ export function Field({ label, children, hint, tip, error, className }: { label:
           </span>
         )}
       </label>
-      <FieldIdContext.Provider value={{ id, errorId: error ? errorId : undefined }}>{children}</FieldIdContext.Provider>
-      {error && <span id={errorId} role="alert" className="text-[11.5px] font-medium text-danger">{error}</span>}
+      <FieldIdContext.Provider value={id}>{children}</FieldIdContext.Provider>
+      {error && <span role="alert" className="text-[11.5px] font-medium text-danger">{error}</span>}
       {!error && hint && <span className="text-[12px] text-faint">{hint}</span>}
     </div>
   )
 }
-type FieldIds = { id: string | undefined; errorId: string | undefined }
-const FieldIdContext = createContext<FieldIds>({ id: undefined, errorId: undefined })
+const FieldIdContext = createContext<string | undefined>(undefined)
 export const useFieldId = () => useContext(FieldIdContext)
 
 type Tone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info'

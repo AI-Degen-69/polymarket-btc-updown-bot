@@ -213,21 +213,7 @@ export function Strategy() {
       const el = document.getElementById(id)
       if (el) observer.observe(el)
     }
-    // The page content sits inside Shell's scrolling container (overflow-y-auto),
-    // not the window. Use that container for the end-of-page check.
-    const container = document.querySelector<HTMLElement>('.scrollbar-thin.overflow-y-auto')
-    const onScroll = () => {
-      if (!container) return
-      const last = TOC_IDS[TOC_IDS.length - 1]
-      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4) {
-        setActiveId(last)
-      }
-    }
-    container?.addEventListener('scroll', onScroll, { passive: true })
-    return () => {
-      observer.disconnect()
-      container?.removeEventListener('scroll', onScroll)
-    }
+    return () => observer.disconnect()
   }, [])
 
   const jumpTo = (id: string) => {
@@ -793,6 +779,10 @@ export function Strategy() {
                   <li key={item.id}>
                     <a
                       href={`#${item.id}`}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        jumpTo(item.id)
+                      }}
                       aria-current={isActive ? 'location' : undefined}
                       className={`block rounded-tile px-2 py-1.5 text-[12.5px] leading-snug transition-colors ${
                         isActive ? 'bg-surface font-semibold text-accent shadow-sm' : 'font-medium text-muted hover:bg-surface hover:text-fg'
@@ -807,6 +797,10 @@ export function Strategy() {
                           <li key={child.id}>
                             <a
                               href={`#${child.id}`}
+                              onClick={(e) => {
+                                e.preventDefault()
+                                jumpTo(child.id)
+                              }}
                               aria-current={childActive ? 'location' : undefined}
                               className={`block rounded-tile px-2 py-1 text-[12px] leading-snug transition-colors ${
                                 childActive ? 'font-semibold text-accent' : 'text-faint hover:text-fg'
