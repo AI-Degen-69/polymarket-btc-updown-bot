@@ -45,8 +45,8 @@ const useOddsSeries = (market: MarketView) => {
   const now = Date.now()
   const v = impliedUp(market)
   const points = series.current.points
-  // Seed at the window open so there is a line from the first paint.
-  if (points.length === 0) points.push({ t: market.startMs, v })
+  // Every window starts at the price-to-beat, the midline the chart measures against.
+  if (points.length === 0) points.push({ t: market.startMs, v: 0.5 })
   else if (now - points[points.length - 1]!.t > 1_500) points.push({ t: now, v })
   if (points.length > MAX_SAMPLES) points.splice(0, points.length - MAX_SAMPLES)
 
@@ -275,7 +275,10 @@ function OddsChart({ market, points }: { market: MarketView; points: OddsPoint[]
   const coords = points.map((p) => [xFor(p.t), yFor(p.v)] as const)
   const line = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
   const last = coords[coords.length - 1]!
-  const area = `${line} L${last[0].toFixed(1)},${H - PAD_BOTTOM} L${coords[0]![0].toFixed(1)},${H - PAD_BOTTOM} Z`
+  // Area between the chart line and the price-to-beat midline, split green/red by side.
+  const midY = yFor(0.5)
+  const priceToBeat = market.anchor ? market.anchor.value.toFixed(2) : null
+  const areaMid = `${line} L${last[0].toFixed(1)},${midY.toFixed(1)} L${coords[0]![0].toFixed(1)},${midY.toFixed(1)} Z`
   const current = points[points.length - 1]?.v ?? 0.5
   const oddsColor = current >= 0.5 ? 'var(--color-success)' : 'var(--color-danger)'
   const upPct = impliedUp(market) * 100
@@ -296,22 +299,35 @@ function OddsChart({ market, points }: { market: MarketView; points: OddsPoint[]
       </div>
       <div className="relative mt-1 flex-1">
       <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 h-full w-full" preserveAspectRatio="none" aria-hidden>
-        {[0.25, 0.5, 0.75].map((t) => (
+        <defs>
+          {/* One fill, clipped to whichever side of the price-to-beat line it is on. */}
+          <clipPath id={`ptb-above-${market.slug}`}>
+            <rect x={0} y={0} width={W} height={midY} />
+          </clipPath>
+          <clipPath id={`ptb-below-${market.slug}`}>
+            <rect x={0} y={midY} width={W} height={H - midY} />
+          </clipPath>
+        </defs>
+        {[0.25, 0.75].map((t) => (
           <line
             key={t}
             x1={0}
             x2={W}
             y1={yFor(t)}
             y2={yFor(t)}
-            stroke={t === 0.5 ? 'var(--color-line-strong)' : 'var(--color-line)'}
-            strokeDasharray={t === 0.5 ? '6 4' : '2 4'}
+            stroke="var(--color-line)"
+            strokeDasharray="2 4"
             strokeWidth={1}
           />
         ))}
-        <text x={2} y={yFor(0.5) - 3} fontSize={10} fill="var(--color-faint)">50</text>
+        <line x1={0} x2={W} y1={midY} y2={midY} stroke="var(--color-warning)" strokeDasharray="2 4" strokeWidth={1} />
+        <text x={2} y={midY - 3} fontSize={10} fill="var(--color-warning)">
+          {priceToBeat ?? '50'}
+        </text>
         {coords.length > 0 && (
           <>
-            <path d={area} fill={oddsColor} fillOpacity={0.14} />
+            <path d={areaMid} fill="var(--color-success)" fillOpacity={0.16} clipPath={`url(#ptb-above-${market.slug})`} />
+            <path d={areaMid} fill="var(--color-danger)" fillOpacity={0.16} clipPath={`url(#ptb-below-${market.slug})`} />
             <path d={line} fill="none" stroke={oddsColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             <circle cx={last[0]} cy={last[1]} r={4} fill={oddsColor} stroke="var(--color-surface)" strokeWidth={2} />
           </>

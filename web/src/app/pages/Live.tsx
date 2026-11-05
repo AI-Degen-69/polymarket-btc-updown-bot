@@ -197,7 +197,8 @@ function Positions({ data }: { data: BotSnapshot }) {
 }
 
 function PositionRow({ position }: { position: PositionView }) {
-  const winning = position.unrealizedPnlUsd >= 0
+  const pnl = position.unrealizedPnlUsd
+  const resolving = pnl == null
   return (
     <li className="py-3">
       <div className="flex items-center justify-between gap-2">
@@ -205,15 +206,15 @@ function PositionRow({ position }: { position: PositionView }) {
           <Badge tone={position.side === 'Up' ? 'success' : 'danger'}>{position.side}</Badge>
           <span className="text-[12.5px] text-muted">{windowLabel(position.slug)}</span>
         </div>
-        <span className={cx('text-[13px] font-semibold tabular-nums', winning ? 'text-success' : 'text-danger')}>
-          {money(position.unrealizedPnlUsd)}
+        <span className={cx('text-[13px] font-semibold tabular-nums', resolving ? 'text-faint' : pnl! >= 0 ? 'text-success' : 'text-danger')}>
+          {resolving ? 'resolving…' : money(pnl)}
         </span>
       </div>
       <div className="mt-1.5 grid grid-cols-3 gap-2 text-[12px] text-muted">
         <span>
           {position.shares} @ {cents(position.entryPrice)}
         </span>
-        <span>mark {cents(position.bid)}</span>
+        <span>mark {position.mark == null ? '—' : cents(position.mark)}</span>
         <span className="text-right">{Math.max(0, Math.round(position.secondsLeft))}s left</span>
       </div>
       <div className="mt-1 flex items-center gap-2 text-[11.5px] text-faint">

@@ -26,9 +26,9 @@
     "maxTradesPerDay": 99,
     "maxConsecutiveLosses": 10,
     "dailyLossLimitPct": 50,
-    "maxDrawdownPct": 15,
-    "maxConcurrentPositions": 1,
-    "cooldownAfterLossSec": 300
+    "maxDrawdownPct": 90,
+    "maxConcurrentPositions": 2,
+    "cooldownAfterLossSec": 20
   },
   "intervalParams": {
     "15m": {

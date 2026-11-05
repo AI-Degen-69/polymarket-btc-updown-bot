@@ -47,8 +47,9 @@ export interface PositionView {
   entryAtMs: number
   endMs: number
   bid: number | null
-  markValueUsd: number
-  unrealizedPnlUsd: number
+  mark: number | null
+  markValueUsd: number | null
+  unrealizedPnlUsd: number | null
   secondsLeft: number
   stalledSec: number | null
 }

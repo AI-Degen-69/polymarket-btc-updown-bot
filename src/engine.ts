@@ -679,6 +679,25 @@ export class Engine {
     this.state.positions = this.state.positions.filter((candidate) => candidate.id !== position.id);
   }
 
+  /**
+   * Per-share mark that stays truthful while a window resolves: an official
+   * resolution pays 1/0, a live book marks at its bid, a pulled book at the
+   * opposite side's bid, and published window stats decide the rest. null =
+   * books pulled and nothing published yet — unknown beats an invented payout.
+   */
+  private markPerShare(position: Position, market: MarketRef | null): number | null {
+    if (market?.resolved) return market.resolved === position.side ? 1 : 0;
+    const bid = market?.quotes[position.side].bid ?? null;
+    if (bid !== null) return bid;
+    if (!market) return null;
+    const other = market.quotes[position.side === "Up" ? "Down" : "Up"].bid;
+    if (other !== null) return Math.min(1, Math.max(0, 1 - other));
+    if (market.closed && market.finalPrice !== null && market.publishedPriceToBeat !== null) {
+      return (market.finalPrice >= market.publishedPriceToBeat ? "Up" : "Down") === position.side ? 1 : 0;
+    }
+    return null;
+  }
+
   // ------------------------------------------------------------------ output
 
   private record(record_: TradeRecord): void {
@@ -754,12 +773,14 @@ export class Engine {
       positions: this.state.positions.map((position) => {
         const market = this.markets.get(position.slug);
         const bid = market?.quotes[position.side].bid ?? null;
-        const markValueUsd = bid === null ? position.shares : position.shares * bid;
+        const mark = this.markPerShare(position, market ?? null);
+        const markValueUsd = mark === null ? null : position.shares * mark;
         return {
           ...position,
           bid,
-          markValueUsd: round2(markValueUsd),
-          unrealizedPnlUsd: round2(markValueUsd - position.costUsd),
+          mark,
+          markValueUsd: markValueUsd === null ? null : round2(markValueUsd),
+          unrealizedPnlUsd: markValueUsd === null ? null : round2(markValueUsd - position.costUsd),
           secondsLeft: Math.max(0, Math.round((position.endMs - nowMs) / 1000)),
           stalledSec: position.stallSinceMs === null ? null : Math.round((nowMs - position.stallSinceMs) / 1000),
         };

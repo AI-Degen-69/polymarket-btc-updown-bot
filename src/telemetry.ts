@@ -25,8 +25,10 @@ export interface MarketView {
 
 export interface PositionView extends Position {
   bid: number | null;
-  markValueUsd: number;
-  unrealizedPnlUsd: number;
+  /** Per-share mark: the bid, or 1/0 once the outcome is decided; null while unknowable. */
+  mark: number | null;
+  markValueUsd: number | null;
+  unrealizedPnlUsd: number | null;
   secondsLeft: number;
   stalledSec: number | null;
 }
