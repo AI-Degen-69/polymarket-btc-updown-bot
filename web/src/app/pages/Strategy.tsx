@@ -41,7 +41,7 @@ const ENTRY_GATES = [
     title: 'Direction Must Hold ≥ 60s',
     subtitle: 'Post-Shakeout Trend',
     icon: TrendingUp,
-    body: 'Direction follows sustained tape momentum, not anchor side. A dump below the open that stabilizes and rallies up for 60s is an Up recovery. Oscillating wicks cancel the signal.',
+    body: 'Direction is measured against the window anchor, not raw momentum. The entire held window must sit on one side of the anchor (plus a noise band); a window that straddles it is rejected as direction-not-held. A rally that is still below the anchor has not reached the win condition, so the min-move gate rejects it. Trading that pre-cross reversal needs a real edge model, which this bot does not have yet.',
     setting: 'minDirectionHoldSeconds: 60s (15m) · 20s (5m)',
     keyMetric: '≥ 60 seconds',
     metricLabel: 'Continuous slope',
@@ -52,8 +52,8 @@ const ENTRY_GATES = [
     title: 'Move Size: 0.05% to 0.50%',
     subtitle: 'Noise & Anti-Chasing Filter',
     icon: Gauge,
-    body: 'Moves under 0.05% are negligible noise. Moves over 0.50% mean the market odds have already adjusted and you are chasing late money.',
-    setting: 'minMovePct: 0.05% · maxMovePct: 0.50%',
+    body: 'Move size is the signed distance to the win condition: +0.05% means the side is 0.05% past the anchor, negative means it is still behind it and cannot enter. Moves over 0.50% mean the odds have already adjusted and you are chasing late money. A non-live anchor (price-history fallback) demands an extra 0.05%.',
+    setting: 'minMovePct: 0.05% (+0.05% if the anchor is not live) · maxMovePct: 0.50%',
     keyMetric: '0.05% – 0.50%',
     metricLabel: 'Allowed move range',
     tone: 'info' as const,
@@ -85,7 +85,7 @@ const ENTRY_GATES = [
     title: 'Skip Dead Chop & Scheduled News',
     subtitle: 'Regime Safety Guard',
     icon: ShieldAlert,
-    body: 'Sit out if 1-hour range is under 0.3% or the 5-minute observation corridor is under $50. Full ±15 minute blackout around high-impact economic news (FOMC, CPI, Fed).',
+    body: 'Sit out if the 1-hour range is under 0.3%, or if the observation corridor (300s on 15m, 100s on 5m) is under $50. Both need 15 minutes of sampled history before they are applied. Full ±15 minute blackout around scheduled news (FOMC, CPI, Fed).',
     setting: 'minHourlyRangePct: 0.3% · tightChopRangeUsd: $50 · news.blackoutMinutes: 15',
     keyMetric: 'Corridor ≥ $50',
     metricLabel: 'Volatile regime only',
@@ -96,7 +96,7 @@ const ENTRY_GATES = [
 const EXIT_SCENARIOS = [
   {
     id: 'take-profit',
-    condition: 'Bid reaches 85¢ – 90¢',
+    condition: 'Bid reaches 85¢ (guide: 85–90¢ band)',
     action: 'Sell to lock profit',
     tone: 'success' as const,
     badge: 'Take Profit',
@@ -249,8 +249,8 @@ export function Strategy() {
           markets settling against Chainlink BTC/USD. Most participants enter within the first 60 seconds on adrenaline,
           getting trapped in false breakouts. This strategy does the reverse: it waits{' '}
           <strong className="text-fg font-semibold">5 full minutes</strong> to observe shakeout exhaustion, confirms a{' '}
-          <strong className="text-fg font-semibold">momentum direction (60s on 15m · 20s on 5m)</strong>, and enters only when odds lag
-          the real probability.
+          <strong className="text-fg font-semibold">direction held for 60s on 15m · 20s on 5m</strong>, and enters only when odds lag
+          the zero-drift probability estimate.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -272,10 +272,12 @@ export function Strategy() {
 
           <div className="rounded-tile border border-line bg-surface-2/50 p-3.5">
             <span className="flex items-center gap-2 text-[11.5px] font-medium uppercase tracking-wider text-faint">
-              <TrendingUp className="size-4 text-info" /> Performance Profile
+              <TrendingUp className="size-4 text-info" /> Measured Edge
             </span>
-            <p className="mt-1.5 text-[15px] font-bold text-fg">55% – 65% Win Rate</p>
-            <p className="text-[12px] text-muted">Wins typically 2× – 3× loss size</p>
+            <p className="mt-1.5 text-[15px] font-bold text-fg">None Proven Yet</p>
+            <p className="text-[12px] text-muted">
+              Replay of 63 windows: underdog hit 28% at 28¢. The bot now measures instead of guessing.
+            </p>
           </div>
         </div>
       </Card>
@@ -373,12 +375,13 @@ export function Strategy() {
           <Card id="timeline-walkthrough" className="scroll-mt-16 p-6">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-[16px] font-semibold text-fg">The Signature Trade Setup (Guide's Real Win)</h3>
+                <h3 className="text-[16px] font-semibold text-fg">The Guide's Signature Setup — Refused by This Bot</h3>
                 <p className="text-[13px] text-muted">
-                  Visual proof of the edge: early dump exhausts, direction recovers for 60s, bot buys UP at 28¢ below the open
+                  The guide's real win: buy UP at 28¢ while price is still below the open. The current model skips it, because
+                  a side that has not crossed the anchor has not reached the win condition.
                 </p>
               </div>
-              <Badge tone="success">+203% Net Return</Badge>
+              <Badge tone="danger">Not traded by this bot</Badge>
             </div>
 
             {/* SVG Visual Graph */}
@@ -425,9 +428,9 @@ export function Strategy() {
 
                 {/* Event 3: Direction confirmed & Entry */}
                 <circle cx="440" cy="200" r="6" fill="var(--color-success)" stroke="#fff" strokeWidth="2" />
-                <rect x="360" y="145" width="160" height="42" rx="6" fill="var(--color-surface)" stroke="var(--color-success)" strokeWidth="1.2" />
-                <text x="440" y="162" textAnchor="middle" fontSize="11" fill="var(--color-success)" fontWeight="bold">14:07 BUY UP @ 28¢</text>
-                <text x="440" y="177" textAnchor="middle" fontSize="10" fill="var(--color-muted)">Held 60s · Model p = 55%</text>
+                <rect x="345" y="143" width="190" height="44" rx="6" fill="var(--color-surface)" stroke="var(--color-danger)" strokeWidth="1.2" />
+                <text x="440" y="160" textAnchor="middle" fontSize="11" fill="var(--color-muted)" fontWeight="bold">14:07 guide buys UP @ 28¢</text>
+                <text x="440" y="176" textAnchor="middle" fontSize="10" fill="var(--color-danger)">bot: −0.22% vs anchor → skip</text>
 
                 {/* Event 4: Profit Take */}
                 <circle cx="620" cy="50" r="6" fill="var(--color-info)" stroke="#fff" strokeWidth="2" />
@@ -452,15 +455,22 @@ export function Strategy() {
               </div>
 
               <div className="rounded-tile border border-line bg-surface p-3">
-                <span className="font-mono text-[11px] font-bold text-success">STEP 3 · 14:07</span>
-                <p className="mt-1 text-[13px] font-semibold text-fg">Reversal Entry @ 28¢</p>
-                <p className="mt-1 text-[12px] text-muted">BTC rallied to $67,250 over 60s. Damped momentum model yields 55% probability.</p>
+                <span className="font-mono text-[11px] font-bold text-danger">STEP 3 · 14:07</span>
+                <p className="mt-1 text-[13px] font-semibold text-fg">Reversal Skipped</p>
+                <p className="mt-1 text-[12px] text-muted">
+                  BTC rallied to $67,250 but is still 0.22% below the $67,400 anchor, so movePct is negative and the bot
+                  logs <code className="rounded bg-surface px-1 font-mono text-fg">move-too-small</code>. The zero-drift model
+                  would price UP at 7–20%, also under the 52% floor.
+                </p>
               </div>
 
               <div className="rounded-tile border border-line bg-surface p-3">
-                <span className="font-mono text-[11px] font-bold text-info">STEP 4 · 14:11</span>
-                <p className="mt-1 text-[13px] font-semibold text-fg">Profit Locked @ 85¢</p>
-                <p className="mt-1 text-[12px] text-muted">UP reaches 88¢. Marketable FAK sells at 85¢. 57¢ profit per share banked.</p>
+                <span className="font-mono text-[11px] font-bold text-faint">STEP 4 · 14:11</span>
+                <p className="mt-1 text-[13px] font-semibold text-fg">What the bot would do next</p>
+                <p className="mt-1 text-[12px] text-muted">
+                  If a position existed, the exit table takes over: bid ≥ 85¢ sells, 60–70¢ for 180s sells, below 20¢ holds
+                  to resolution. Exit rules are unchanged — only the entries were tightened.
+                </p>
               </div>
             </div>
           </Card>
@@ -510,7 +520,7 @@ export function Strategy() {
             </p>
 
             <div className="mt-6 space-y-6">
-              {/* Formula 1: Drift-Adjusted Probability Model */}
+              {/* Formula 1: Zero-Drift Probability Model */}
               <div id="formula-probability" className="scroll-mt-16 rounded-card border border-line bg-surface-2/30 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h4 className="text-[14.5px] font-bold text-fg">1. Log-Normal Probability Model</h4>
@@ -744,22 +754,27 @@ export function Strategy() {
               <div className="mt-3 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-tile border border-line bg-surface p-3.5">
                   <span className="text-[11px] font-mono uppercase text-faint">Consecutive Losses</span>
-                  <p className="mt-1 text-[16px] font-bold text-danger">2 Losses in a Row</p>
-                  <p className="text-[12px] text-muted">Halts trading for remainder of UTC day</p>
+                  <p className="mt-1 text-[16px] font-bold text-danger">10 in a Row</p>
+                  <p className="text-[12px] text-muted">Halts trading for the rest of the UTC day (guide says 2)</p>
                 </div>
 
                 <div className="rounded-tile border border-line bg-surface p-3.5">
                   <span className="text-[11px] font-mono uppercase text-faint">Daily Loss Ceiling</span>
-                  <p className="mt-1 text-[16px] font-bold text-danger">3% of Equity</p>
-                  <p className="text-[12px] text-muted">Locks bankroll to protect principle</p>
+                  <p className="mt-1 text-[16px] font-bold text-danger">50% of Equity</p>
+                  <p className="text-[12px] text-muted">Halts for the day (guide says 3%)</p>
                 </div>
 
                 <div className="rounded-tile border border-line bg-surface p-3.5">
                   <span className="text-[11px] font-mono uppercase text-faint">Max Drawdown</span>
-                  <p className="mt-1 text-[16px] font-bold text-danger">15% from Peak</p>
-                  <p className="text-[12px] text-muted">Emergency halt until manual audit</p>
+                  <p className="mt-1 text-[16px] font-bold text-danger">90% from Peak</p>
+                  <p className="text-[12px] text-muted">Halt until manual audit (guide says 15%)</p>
                 </div>
               </div>
+              <p className="mt-3 text-[12px] leading-relaxed text-muted">
+                These are the values in <code className="rounded bg-surface px-1 font-mono text-fg">config.json</code>, not the
+                guide's. The guide trades 3–6 markets a day and stops after 2 losses; this config allows 99 trades, a 20s
+                cooldown after a loss, and a 50% daily loss. Loosening those is the single largest departure from the strategy.
+              </p>
             </div>
           </Card>
       </section>

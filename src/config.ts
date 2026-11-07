@@ -53,7 +53,9 @@ export interface ExitConfig {
   stallBandLow: number;
   stallBandHigh: number;
   /** Below this the guide holds to resolution rather than locking the loss. */
-  acceptLossBelowCents: number;
+  acceptLossBelowCents?: number;
+  /** Cut loss when bid drops below this to salvage capital instead of expiring at 0. */
+  stopLossBelowCents?: number;
   /** Hysteresis/grace window in seconds tolerated when bid briefly flickers outside stall band. */
   stallGraceSeconds: number;
 }

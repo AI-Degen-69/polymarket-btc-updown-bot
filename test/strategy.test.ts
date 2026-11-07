@@ -366,8 +366,14 @@ describe("exit rules", () => {
     expect(evaluateExit(ctx(0.55))).toEqual(expect.objectContaining({ action: "hold", reason: "thesis-intact" }));
   });
 
-  test("holds at 20c and accepts the loss at resolution", () => {
+  test("cuts loss when bid drops to or below stopLossBelowCents", () => {
     expect(evaluateExit(ctx(0.15))).toEqual(
+      expect.objectContaining({ action: "sell", reason: "stop-loss-hit" }),
+    );
+  });
+
+  test("holds at 18c when above stop loss but within accept-loss band", () => {
+    expect(evaluateExit(ctx(0.18))).toEqual(
       expect.objectContaining({ action: "hold", reason: "accept-loss-at-resolution" }),
     );
   });

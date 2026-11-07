@@ -93,7 +93,8 @@ async function main(): Promise<void> {
 
   const live = command === "run" && (hasFlag("live") || process.env.LIVE === "true");
   const config = loadConfig({ live });
-  const minutes = Number(flagValue("minutes", hasFlag("once") ? "0.05" : "60"));
+  // `scan` is a bounded dry run by default; `run` keeps going until stopped.
+  const minutes = Number(flagValue("minutes", hasFlag("once") ? "0.05" : command === "scan" ? "60" : "0"));
   const durationMs = Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : undefined;
 
   printRules(config);

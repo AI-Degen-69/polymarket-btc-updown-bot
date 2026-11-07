@@ -157,7 +157,7 @@ export interface BotConfigView {
     minPositionUsd: number
     feeRate: number
   }
-  exit: { profitTargetCents: number; stallBandLow: number; stallBandHigh: number; acceptLossBelowCents: number }
+  exit: { profitTargetCents: number; stallBandLow: number; stallBandHigh: number; acceptLossBelowCents?: number; stopLossBelowCents?: number }
   risk: {
     maxConcurrentPositions: number
     maxTradesPerDay: number

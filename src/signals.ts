@@ -370,7 +370,20 @@ export function evaluateExit(ctx: ExitContext): ExitDecision {
     return { action: "sell", reason: "profit-target-hit", minPrice: round4(bid), stallSinceMs, stallLeftBandSinceMs };
   }
 
-  if (bid <= config.exit.acceptLossBelowCents) {
+  if (
+    config.exit.stopLossBelowCents !== undefined &&
+    config.exit.stopLossBelowCents > 0 &&
+    bid <= config.exit.stopLossBelowCents &&
+    bid > 0
+  ) {
+    return { action: "sell", reason: "stop-loss-hit", minPrice: round4(bid), stallSinceMs, stallLeftBandSinceMs };
+  }
+
+  if (
+    config.exit.acceptLossBelowCents !== undefined &&
+    config.exit.acceptLossBelowCents > 0 &&
+    bid <= config.exit.acceptLossBelowCents
+  ) {
     // Selling here would lock the loss; the guide holds for resolution.
     return { action: "hold", reason: "accept-loss-at-resolution", stallSinceMs, stallLeftBandSinceMs };
   }

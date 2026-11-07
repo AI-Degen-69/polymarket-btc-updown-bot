@@ -20,6 +20,7 @@
     "stallBandLow": 0.6,
     "stallBandHigh": 0.7,
     "acceptLossBelowCents": 0.2,
+    "stopLossBelowCents": 0.15,
     "stallGraceSeconds": 15
   },
   "risk": {

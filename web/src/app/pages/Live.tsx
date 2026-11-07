@@ -128,6 +128,12 @@ export function Live() {
                         <EventRow key={`${event.ts}-${index}`} event={event} />
                       ))}
                     </ul>
+                  ) : events.isError ? (
+                    <EmptyState
+                      icon={<Activity />}
+                      title="Bot API not reachable"
+                      description="Nothing came back from 127.0.0.1:8788. Start it with `bun run dashboard`; this list refills as soon as it answers."
+                    />
                   ) : (
                     <EmptyState icon={<Activity />} title="No decisions logged yet" description="Entries, exits, holds and skips appear here as the bot ticks." />
                   )}
