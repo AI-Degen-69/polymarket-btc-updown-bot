@@ -33,11 +33,15 @@ interface GateTick {
   title: string
 }
 
-const MAX_SAMPLES = 300
-// shortcut: odds history is sampled in-browser only (2s poll, reset per window, lost on reload);
-// upgrade to bot-persisted odds history if you need the line across refreshes.
-const useOddsSeries = (market: MarketView) => {
+const MAX_SAMPLES = 500
+const useOddsSeries = (market: MarketView): OddsPoint[] => {
   const series = useRef<{ slug: string; points: OddsPoint[] }>({ slug: '', points: [] })
+
+  // When the bot engine provides continuous server-side odds history, use it
+  if (market.oddsHistory && market.oddsHistory.length > 0) {
+    series.current = { slug: market.slug, points: market.oddsHistory }
+    return series.current.points
+  }
 
   if (series.current.slug !== market.slug) {
     series.current = { slug: market.slug, points: [] }
@@ -45,12 +49,18 @@ const useOddsSeries = (market: MarketView) => {
   const now = Date.now()
   const v = impliedUp(market)
   const points = series.current.points
-  // Every window starts at the price-to-beat, the midline the chart measures against.
-  if (points.length === 0) points.push({ t: market.startMs, v: 0.5 })
-  else if (now - points[points.length - 1]!.t > 1_500) points.push({ t: now, v })
+
+  if (points.length === 0) {
+    // Only anchor at 0.5 if we are actually at the start of the window
+    if (Math.abs(now - market.startMs) < 15_000) {
+      points.push({ t: market.startMs, v: 0.5 })
+    }
+    points.push({ t: now, v })
+  } else if (now - points[points.length - 1]!.t > 1_500) {
+    points.push({ t: now, v })
+  }
   if (points.length > MAX_SAMPLES) points.splice(0, points.length - MAX_SAMPLES)
 
-  // The snapshot refetches every 2s, re-running this and re-rendering.
   return series.current.points
 }
 

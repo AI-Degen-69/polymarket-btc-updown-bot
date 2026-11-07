@@ -21,6 +21,7 @@ export interface MarketView {
   secondsRemaining: number;
   /** The gate that decided this market this tick, with the numbers behind it. */
   verdict: { action: "enter" | "skip" | "blocked"; reason: string; detail: Record<string, unknown> };
+  oddsHistory?: { t: number; v: number }[];
 }
 
 export interface PositionView extends Position {

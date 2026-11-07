@@ -19,6 +19,7 @@ export interface MarketView {
   spreadCents: number | null
   secondsRemaining: number
   verdict: { action: 'enter' | 'skip' | 'blocked'; reason: string; detail: Record<string, unknown> }
+  oddsHistory?: { t: number; v: number }[]
 }
 
 export interface RiskState {
@@ -205,6 +206,7 @@ export const useBotSnapshot = () =>
     queryKey: ['bot', 'snapshot'],
     queryFn: () => getJson<{ online: boolean; snapshot: BotSnapshot | null; ageMs: number | null }>('/snapshot'),
     refetchInterval: 2_000,
+    refetchIntervalInBackground: true,
     retry: false,
   })
 

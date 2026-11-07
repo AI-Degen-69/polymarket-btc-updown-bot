@@ -39,6 +39,7 @@ export class Engine {
   private lastLogAt = new Map<string, number>();
   /** Latest per-market view, published to the dashboard snapshot. */
   private verdicts = new Map<string, MarketView>();
+  private oddsHistory = new Map<string, { t: number; v: number }[]>();
   /** De-dupe signatures so the journal records changes, not every 2s tick. */
   private lastSignature = new Map<string, string>();
   private stopped = false;
@@ -165,6 +166,7 @@ export class Engine {
     this.state = this.store.load(this.config.bankrollUsd, this.config.risk.dailyLossLimitPct);
     this.risk = new RiskManager(this.state.risk, this.config.risk);
     this.verdicts.clear();
+    this.oddsHistory.clear();
     this.lastSignature.clear();
     this.lastLogAt.clear();
     log("risk", "reset loaded: positions, trades and counters cleared", {
@@ -221,7 +223,10 @@ export class Engine {
 
     // Drop windows that are well past resolution.
     for (const [slug, market] of this.markets) {
-      if (nowMs - market.endMs > 30 * 60 * 1000) this.markets.delete(slug);
+      if (nowMs - market.endMs > 30 * 60 * 1000) {
+        this.markets.delete(slug);
+        this.oddsHistory.delete(slug);
+      }
     }
   }
 
@@ -798,6 +803,22 @@ export class Engine {
   /** Stores the latest market view and journals the verdict when it changes. */
   private note(market: MarketRef, metrics: MarketMetrics, verdict: MarketView["verdict"], nowMs: number): void {
     const anchor = this.state.anchors[market.slug] ?? null;
+    const v = round4(impliedUpOdds(market.quotes));
+    let history = this.oddsHistory.get(market.slug);
+    if (!history) {
+      history = [];
+      if (Math.abs(nowMs - market.startMs) < 15_000) {
+        history.push({ t: market.startMs, v: 0.5 });
+      }
+      this.oddsHistory.set(market.slug, history);
+    }
+    const last = history[history.length - 1];
+    if (!last || nowMs - last.t >= 1500) {
+      history.push({ t: nowMs, v });
+      if (history.length > 500) {
+        history.splice(0, history.length - 500);
+      }
+    }
     this.verdicts.set(market.slug, {
       slug: market.slug,
       interval: market.interval,
@@ -817,6 +838,7 @@ export class Engine {
       spreadCents: metrics.spreadCents,
       secondsRemaining: metrics.secondsRemaining,
       verdict,
+      oddsHistory: [...history],
     });
 
     if (verdict.action === "enter") return; // entries are journalled with the fill
@@ -891,6 +913,19 @@ export class Engine {
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function round4(value: number): number {
+  return Math.round(value * 10000) / 10000;
+}
+
+function impliedUpOdds(quotes: Record<OutcomeSide, { bid: number | null; ask: number | null }>): number {
+  const up = quotes.Up.ask ?? quotes.Up.bid;
+  const down = quotes.Down.ask ?? quotes.Down.bid;
+  if (up !== null && down !== null && up + down > 0) return up / (up + down);
+  if (up !== null) return up;
+  if (down !== null) return 1 - down;
+  return 0.5;
 }
 
 function round3(value: number): number {
