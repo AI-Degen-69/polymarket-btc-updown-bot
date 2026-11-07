@@ -349,8 +349,9 @@ export type ExitDecision =
 
 /**
  * The guide's mechanical exit table: lock profit at 85-90c, sell if odds stall
- * at 60-70c for 3+ minutes, hold small reversals, hold at <=20c and take the
- * loss at resolution, and leave immediately on news.
+ * at 60-70c for 3+ minutes, hold small reversals, sell at <=15c (stop loss,
+ * when configured), hold at <=20c and take the loss at resolution, and leave
+ * immediately on news.
  *
  * Includes a grace window (default 15s) so single-tick CLOB bid flickers
  * outside 60-70c do not instantly wipe the stall counter.

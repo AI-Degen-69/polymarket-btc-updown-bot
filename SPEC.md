@@ -42,7 +42,7 @@ The primary objective is to align bot decision-making with the exact behavior de
 - **As-Is**: `stallSinceMs` resets to `null` on any single 2-second tick where bid $< 0.60$ or $> 0.70$.
 - **To-Be**:
   - A grace window of 15 seconds is applied before clearing `stallSinceMs` when bid fluctuates outside $[0.60, 0.70]$, preventing CLOB micro-flickers from wiping the 180s stall timer.
-  - Profit target ($\ge 0.85$) or catastrophic drop ($\le 0.20$) immediately override.
+  - Profit target ($\ge 0.85$) sells immediately; a stop loss sells at $\le 0.15$ and 0.15–0.20 holds to resolution.
 
 ### Requirement 5: Configuration & UI Consistency
 - **As-Is**: `config.example.json` lacks `exit` block and several entry params. `Strategy.tsx` misstates 96 5-minute windows.

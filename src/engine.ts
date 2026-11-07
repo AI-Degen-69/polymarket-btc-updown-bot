@@ -101,7 +101,7 @@ export class Engine {
       await sleep(this.config.pollIntervalMs);
     }
 
-    const stopReason = this.stopped ? "stop-requested" : Date.now() >= deadline ? "duration-limit" : "loop-ended";
+    const stopReason = this.stopped ? "stop-requested" : "duration-limit";
     this.feed.stop();
     if (this.persist) this.save();
     log("info", "engine stopped", {
