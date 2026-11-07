@@ -123,12 +123,12 @@ const EXIT_SCENARIOS = [
   },
   {
     id: 'resolution-hold',
-    condition: 'Odds collapse to ≤ 20¢',
+    condition: 'Odds fall to 15¢ – 20¢',
     action: 'Hold until final resolution',
     tone: 'danger' as const,
     badge: 'Hold to Expiry',
     pnl: 'Max Loss (-100%)',
-    why: 'Selling at 15–20¢ crystalizes a guaranteed ~80% loss for pennies. Holding retains the non-zero probability of an end-of-window rebound.',
+    why: 'Selling at 15–20¢ crystalizes a guaranteed ~80% loss for pennies. Holding retains the non-zero probability of an end-of-window rebound. Below 15¢ the stop-loss sells instead.',
   },
   {
     id: 'news-flash',
@@ -468,8 +468,8 @@ export function Strategy() {
                 <span className="font-mono text-[11px] font-bold text-faint">STEP 4 · 14:11</span>
                 <p className="mt-1 text-[13px] font-semibold text-fg">What the bot would do next</p>
                 <p className="mt-1 text-[12px] text-muted">
-                  If a position existed, the exit table takes over: bid ≥ 85¢ sells, 60–70¢ for 180s sells, below 20¢ holds
-                  to resolution. Exit rules are unchanged — only the entries were tightened.
+                  If a position existed, the exit table takes over: bid ≥ 85¢ sells, at or below 15¢ sells (stop-loss), 60–70¢ for 180s
+                  sells, and 15–20¢ holds to resolution.
                 </p>
               </div>
             </div>

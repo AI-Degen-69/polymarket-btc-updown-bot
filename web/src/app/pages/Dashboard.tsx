@@ -25,7 +25,7 @@ export function Dashboard() {
   const data = snapshot.data?.snapshot ?? null
   const stats = kpis.data?.kpis ?? null
   const mode = control.data?.mode ?? data?.mode ?? 'paper'
-  const lastSeenMs = control.data?.snapshotAgeMs != null ? Date.now() - control.data.snapshotAgeMs : null
+  const lastSeenMs = control.data?.snapshotAgeMs != null && control.dataUpdatedAt > 0 ? control.dataUpdatedAt - control.data.snapshotAgeMs : null
 
   return (
     <div className="mx-auto max-w-[1200px] p-5 sm:p-8">

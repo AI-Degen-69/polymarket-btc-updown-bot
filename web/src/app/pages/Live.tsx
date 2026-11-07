@@ -4,6 +4,7 @@ import { PolymarketLiveChart } from '../components/PolymarketEmbed'
 import { eventMetrics, KIND_TONE, reasonLabel as label } from '../lib/labels'
 import { Badge, Button, Card, EmptyState, PageHeader, Skeleton, useToast } from '../components/ui'
 import {
+  BOT_ORIGIN,
   useBotEvents,
   useBotSnapshot,
   useBotTrades,
@@ -77,6 +78,20 @@ export function Live() {
 
       {snapshot.isLoading ? (
         <Skeleton className="mt-6 h-[260px] rounded-card" />
+      ) : snapshot.isError && !snapshot.data ? (
+        <Card className="mt-6 p-6">
+          <div className="flex items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-card bg-warning-soft text-warning">
+              <Activity className="size-5" />
+            </span>
+            <div>
+              <h2 className="text-[15px] font-semibold">Bot API not reachable</h2>
+              <p className="mt-1 text-[13.5px] text-muted">
+                The request to {BOT_ORIGIN} failed. Start the API with <code>`bun run dashboard`</code>; this page fills in on its own once it answers.
+              </p>
+            </div>
+          </div>
+        </Card>
       ) : !online ? (
         <Card className="mt-6 p-6">
           <div className="flex items-start gap-3">
@@ -132,7 +147,7 @@ export function Live() {
                     <EmptyState
                       icon={<Activity />}
                       title="Bot API not reachable"
-                      description="Nothing came back from 127.0.0.1:8788. Start it with `bun run dashboard`; this list refills as soon as it answers."
+                      description={`The request failed. Start the API with \`bun run dashboard\`; this list refills as soon as the API at ${BOT_ORIGIN} answers.`}
                     />
                   ) : (
                     <EmptyState icon={<Activity />} title="No decisions logged yet" description="Entries, exits, holds and skips appear here as the bot ticks." />

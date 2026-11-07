@@ -95,6 +95,15 @@ async function main(): Promise<void> {
   const config = loadConfig({ live });
   // `scan` is a bounded dry run by default; `run` keeps going until stopped.
   const minutes = Number(flagValue("minutes", hasFlag("once") ? "0.05" : command === "scan" ? "60" : "0"));
+  // A present-but-invalid --minutes must not silently drop the session limit.
+  const rawMinutes = argv[argv.indexOf("--minutes") + 1];
+  if (
+    hasFlag("minutes") &&
+    (rawMinutes === undefined || rawMinutes.startsWith("--") || rawMinutes.trim() === "" || !(Number(rawMinutes) >= 0))
+  ) {
+    process.stderr.write("--minutes requires a non-negative numeric value\n");
+    process.exit(1);
+  }
   const durationMs = Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : undefined;
 
   printRules(config);
