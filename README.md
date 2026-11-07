@@ -26,7 +26,7 @@ unless you pass `--live`.**
 | "Lock profit at 85–90¢" | Sell at the bid when it reaches `profitTargetCents: 0.85` |
 | "Odds stall at 60–70¢ for 3+ minutes" | Stall timer per position with 15s grace window for order book quote jitter, exits after `stallSeconds` |
 | "Odds reverse below entry → hold" | Holds while the thesis is intact |
-| "Reverse to 20¢ → accept the loss" | Holds to resolution below `acceptLossBelowCents: 0.20` |
+| "Reverse to ≤15¢ → cut loss" | Exits at bid via `stopLossBelowCents: 0.15` to salvage capital instead of expiring at 0¢ |
 | "Sell immediately on news" | News blackout flips open positions to sell |
 | "3–6 markets per day, not 96" | `maxTradesPerDay: 6` |
 | "Two losses in a row → stop for the day" | `maxConsecutiveLosses: 2` plus a cooldown after every loss |

@@ -25,6 +25,7 @@ export const EDITABLE: Record<string, [number, number]> = {
   "exit.stallBandLow": [0.05, 0.95],
   "exit.stallBandHigh": [0.05, 0.99],
   "exit.acceptLossBelowCents": [0.01, 0.5],
+  "exit.stopLossBelowCents": [0.01, 0.5],
   "exit.stallGraceSeconds": [0, 300],
   "risk.maxTradesPerDay": [1, 100],
   "risk.maxConsecutiveLosses": [1, 20],
@@ -98,6 +99,7 @@ export const DEFAULT_CONFIG = {
     stallBandLow: 0.6,
     stallBandHigh: 0.7,
     acceptLossBelowCents: 0.2,
+    stopLossBelowCents: 0.15,
     stallGraceSeconds: 15,
   },
   risk: {

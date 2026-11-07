@@ -101,9 +101,14 @@ export class Engine {
       await sleep(this.config.pollIntervalMs);
     }
 
+    const stopReason = this.stopped ? "stop-requested" : "duration-limit";
     this.feed.stop();
     if (this.persist) this.save();
-    log("info", "engine stopped", { equity: money(this.equityUsd()), trades: this.risk.state.tradesToday });
+    log("info", "engine stopped", {
+      reason: stopReason,
+      equity: money(this.equityUsd()),
+      trades: this.risk.state.tradesToday,
+    });
   }
 
   stop(): void {

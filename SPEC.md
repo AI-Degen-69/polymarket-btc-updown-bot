@@ -22,6 +22,7 @@ The primary objective is to align bot decision-making with the exact behavior de
   - If BTC dumped below the anchor, stabilized, and has sustained an upward recovery for $\ge 60\text{s}$, the bot identifies direction as `"Up"`, allowing entry on `"Up"` tokens at discounted odds (e.g. 25–40¢).
   - Continuation moves (staying above anchor and trending up, or staying below and trending down) continue to be supported.
   - Flapping/oscillating price during the hold window triggers `direction-not-held`.
+- **Superseded in part (2026-11-05)**: the reversal path exists but cannot be entered. With zero drift, any side still behind the anchor prices at $p < 0.50$ and fails `minModelProb: 0.52`; signed `movePct` also fails the min-move gate. Trading the pre-cross reversal requires an edge model the bot does not have.
 
 ### Requirement 2: Momentum-Aware Probability Pricing
 - **As-Is**: Zero-drift Brownian motion $p = \Phi(\ln(price/anchor) / (\sigma \sqrt{\tau}))$ strictly assigns $p < 0.50$ when $price < anchor$.
@@ -29,6 +30,7 @@ The primary objective is to align bot decision-making with the exact behavior de
   - `upProbability` accepts an optional drift parameter ($\mu$ per second) derived from post-shakeout momentum.
   - When post-shakeout recovery velocity is present, the drift term projects expected recovery toward/beyond anchor over remaining time $\tau$.
   - Without drift, model retains backward-compatible driftless behavior.
+- **Superseded (2026-11-05)**: the drift term was removed from `signals.ts`. Projecting a 60s slope over 400–870s flipped $p$ from 0.11 to 0.61 within seconds and bought the losing side six times out of six. `p` is zero-drift again.
 
 ### Requirement 3: Tight Chop Filter ($50 Corridor)
 - **As-Is**: Only macro 1-hour range is checked (`minHourlyRangePct: 0.3`).
@@ -40,7 +42,7 @@ The primary objective is to align bot decision-making with the exact behavior de
 - **As-Is**: `stallSinceMs` resets to `null` on any single 2-second tick where bid $< 0.60$ or $> 0.70$.
 - **To-Be**:
   - A grace window of 15 seconds is applied before clearing `stallSinceMs` when bid fluctuates outside $[0.60, 0.70]$, preventing CLOB micro-flickers from wiping the 180s stall timer.
-  - Profit target ($\ge 0.85$) or catastrophic drop ($\le 0.20$) immediately override.
+  - Profit target ($\ge 0.85$) sells immediately; a stop loss sells at $\le 0.15$ and 0.15–0.20 holds to resolution.
 
 ### Requirement 5: Configuration & UI Consistency
 - **As-Is**: `config.example.json` lacks `exit` block and several entry params. `Strategy.tsx` misstates 96 5-minute windows.

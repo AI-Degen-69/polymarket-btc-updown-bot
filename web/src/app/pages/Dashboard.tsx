@@ -25,6 +25,7 @@ export function Dashboard() {
   const data = snapshot.data?.snapshot ?? null
   const stats = kpis.data?.kpis ?? null
   const mode = control.data?.mode ?? data?.mode ?? 'paper'
+  const lastSeenMs = control.data?.snapshotAgeMs != null && control.dataUpdatedAt > 0 ? control.dataUpdatedAt - control.data.snapshotAgeMs : null
 
   return (
     <div className="mx-auto max-w-[1200px] p-5 sm:p-8">
@@ -71,6 +72,7 @@ export function Dashboard() {
               <p className="text-[12.5px] text-muted">
                 Start it to begin scanning the 5- and 15-minute windows. It starts in paper mode — live trading stays a
                 deliberate CLI command.
+                {lastSeenMs !== null && <> Last heartbeat {relativeTime(lastSeenMs)}.</>}
               </p>
             </div>
           </div>
